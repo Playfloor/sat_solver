@@ -276,29 +276,28 @@ main :: () {
   }
 
   // parse the sat file
-  file_name := args[1];
-  sat_vars, clauses := parse_sat_file(file_name);
-  // sat solver
-  sat := conflict_drive_clause_learning(sat_vars, clauses);
+  for i: 1..args.count - 1 {
+    file_name := args[i];
+    print("-----------------------\n");
+    print("%\n", file_name);
 
-  if sat {
-    for var : sat_vars {
-      if var == SAT_VAR.TRUE
-        print(" x%    ", it_index+1);
-      else
-        print("-x%   ", it_index+1);
+    sat_vars, clauses := parse_sat_file(file_name);
+    // sat solver
+    sat := conflict_drive_clause_learning(sat_vars, clauses);
+ 
+    if sat {
+      print("sat   ");
+      for var : sat_vars {
+        if var == SAT_VAR.TRUE
+          print(" x%    ", it_index+1);
+        else
+          print("-x%   ", it_index+1);
+      }
+      print("\n");
+    } else {
+      print("unsat\n");
     }
-    print("\nsat\n");
-  } else {
-    for var : sat_vars {
-      if var == SAT_VAR.TRUE
-        print(" x%   ", it_index+1);
-      else
-        print("-x%  ", it_index+1);
-    }
-    print("unsat\n");
   }
-
 }
 
 
