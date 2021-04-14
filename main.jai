@@ -89,9 +89,109 @@ naive_sat_solver :: (vars: [..]SAT_VAR, clauses: [..]Clause, level:=0)->bool {
   return false;
 }
 
-cdcl :: (a: [..]SAT_VAR, f: [..]Clause)->bool {
+boolean_constant_propagation :: (f: [..]Clause, a: [..]SAT_VAR)->bool {
+  TF := true;
+
+  while(TF) {
+    TF = false;
+    // unit propagation
+    for clause : f {
+      count := 0;
+      index := -1;
+      is_not_total : bool = ---;
+      for var_num : clause {
+        is_not := var_num < 0;
+        if is_not {
+          var_num = (-var_num)-1;
+        } else {
+          var_num = var_num-1;
+        }
+        if a[var_num] == SAT_VAR.UNASSIGNED {
+          if count < 1 {
+            count = count + 1;
+            index = var_num;
+            is_not_total = is_not;
+          } else {
+            count = count + 1;
+            index = -1;
+            break;
+          }
+        } else if (a[var_num] == SAT_VAR.TRUE && !is_not) || (a[var_num]==SAT_VAR.FALSE && is_not) {
+          count = 0;
+          index = -1;
+          break;
+        }
+      }
+
+      // exactly one unassigned variable
+      if count == 1 {
+        if is_not_total {
+          a[index] = SAT_VAR.FALSE;
+        } else {
+          a[index] = SAT_VAR.TRUE;
+        }
+        TF = true;
+      }
+    }
+
+    //pure literal propagation.
+    for var : a {
+      if var != SAT_VAR.UNASSIGNED continue;
+      val := it_index;
+      pure : SAT_VAR = cast(SAT_VAR) 0;
+
+      for clause : f {
+
+        for var_num : clause {
+          if var_num < 0 {
+            var_num = -var_num - 1;
+            if a[var_num] == SAT_VAR.FALSE
+              continue clause;
+
+          } else {
+            var_num = var_num - 1;
+            if a[var_num] == SAT_VAR.TRUE
+              continue clause;
+          }
+        }
+
+        for var_num : clause {
+          index := var_num;
+          is_not := index < 0;
+          if is_not {
+            index = -index - 1;
+          } else {
+            index = index - 1;
+          }
+
+          if val != index continue;
+
+          if is_not {
+            pure |= SAT_VAR.FALSE;
+          } else {
+            pure |= SAT_VAR.TRUE;
+          }
+        }
+      }
+
+      if pure == SAT_VAR.TRUE {
+        a[val] = SAT_VAR.TRUE;
+        TF = true;
+      } else if pure == SAT_VAR.FALSE {
+        a[val] = SAT_VAR.FALSE;
+        TF = true;
+      }
+
+    }
+
+  }
+
+  return true;
+}
+
+conflict_drive_clause_learning :: (a: [..]SAT_VAR, f: [..]Clause)->bool {
   
-  if bcp(f, a) {
+  if boolean_constant_propagation(f, a) {
     return is_satisfiable(a, f);
   }
 
@@ -99,7 +199,7 @@ cdcl :: (a: [..]SAT_VAR, f: [..]Clause)->bool {
   while has_unassigned_variables(a) {
     level = level + 1;
     decide(f, a);    
-    while bcp(f, a) {
+    while boolean_constant_propagation(f, a) {
       b, c := analyze_conflict();
       array_add(*f, c);
       if b < 0 {
@@ -134,100 +234,6 @@ cdcl :: (a: [..]SAT_VAR, f: [..]Clause)->bool {
     return false;
   }
 
-
-  bcp :: (f: [..]Clause, a: [..]SAT_VAR)->bool {
-    TF := true;
-
-    while(TF) {
-      TF = false;
-      // unit propagation
-      for clause : f {
-        count := 0;
-        index := -1;
-        is_not_total : bool = ---;
-        for var_num : clause {
-          is_not := var_num < 0;
-          if is_not {
-            var_num = (-var_num)-1;
-          } else {
-            var_num = var_num-1;
-          }
-          if a[var_num] == SAT_VAR.UNASSIGNED {
-            if count < 1 {
-              count = count + 1;
-              index = var_num;
-              is_not_total = is_not;
-            } else {
-              count = count + 1;
-              index = -1;
-              break;
-            }
-          } else if (a[var_num] == SAT_VAR.TRUE && !is_not) || (a[var_num]==SAT_VAR.FALSE && is_not) {
-            count = 0;
-            index = -1;
-            break;
-          }
-        }
-  
-        // exactly one unassigned variable
-        if count == 1 {
-          if is_not_total {
-            a[index] = SAT_VAR.FALSE;
-          } else {
-            a[index] = SAT_VAR.TRUE;
-          }
-          TF = true;
-        }
-      }
-
-      //pure literal propagation.
-      for var : a {
-        if var != SAT_VAR.UNASSIGNED continue;
-        val := it_index;
-        pure : SAT_VAR = cast(SAT_VAR) 0;
-
-        for clause : f {
-          for var_num : clause {
-            index := var_num;
-            is_not := index < 0;
-            if is_not {
-              index = -index - 1;
-            } else {
-              index = index - 1;
-            }
-
-            if a[index] == SAT_VAR.TRUE {
-              break;
-            }
-
-
-            if val != index continue;
-  
-            if is_not {
-              pure |= SAT_VAR.FALSE;
-            } else {
-              pure |= SAT_VAR.TRUE;
-            }
-  
-          }
-        }
-
-        if pure == SAT_VAR.TRUE|SAT_VAR.FALSE {
-          // bad, cannot be both at same time.
-        } else if pure == SAT_VAR.TRUE {
-          a[it_index] = SAT_VAR.TRUE;
-          TF = true;
-        } else if pure == SAT_VAR.FALSE {
-          a[it_index] = SAT_VAR.FALSE;
-          TF = true;
-        }
-
-      }
-
-    }
-
-    return true;
-  }
 
   // TODO: just temporary. this is just useless
   is_satisfiable :: (vars: [..]SAT_VAR, clauses: [..]Clause)->bool {
@@ -273,7 +279,7 @@ main :: () {
   file_name := args[1];
   sat_vars, clauses := parse_sat_file(file_name);
   // sat solver
-  sat := cdcl(sat_vars, clauses);
+  sat := conflict_drive_clause_learning(sat_vars, clauses);
 
   if sat {
     for var : sat_vars {
