@@ -1,0 +1,4 @@
+c This is 1unsat.cnf
+p cnf 1 2
+1  0
+-1 0

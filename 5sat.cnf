@@ -1,0 +1,5 @@
+c This is 5sat.cnf
+p cnf 4 4
+1 2 3 4
+-2
+-3
