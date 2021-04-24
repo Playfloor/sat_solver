@@ -2,15 +2,16 @@
 #import "File";
 #import "String";
 
-SAT_VAR :: enum s8 { UNASSIGNED :: TRUE|FALSE; FALSE :: 1; TRUE :: 2; }
+SAT :: enum s8 { UNASSIGNED :: TRUE|FALSE; FALSE :: 1; TRUE :: 2; CONFLICT :: 4; OKAY :: 0; }
+
 
 Clause :: [..] int;
 
-parse_sat_file :: (file_name: string)-> [..] SAT_VAR, [..]Clause {
+parse_sat_file :: (file_name: string)-> int, [..]Clause {
   text := read_entire_file(file_name);
   lines := split(text, "\n");
-  sat_vars: [..] SAT_VAR;
   clauses : [..]Clause;
+  num_variables := -1;
 
   for line : lines {
     tokens := split(line, " ");
@@ -22,48 +23,40 @@ parse_sat_file :: (file_name: string)-> [..] SAT_VAR, [..]Clause {
     }
 
     else if equal(tokens[0], "p") {
-      num_variables := string_to_int(tokens[2]);
+      num_variables = string_to_int(tokens[2]);
       num_clauses   := string_to_int(tokens[3]);
-      array_reserve(*sat_vars, num_variables);
       array_reserve(*clauses, num_clauses);
-
-      for i: 0..num_variables-1 {
-        array_add(*sat_vars, SAT_VAR.UNASSIGNED);
-      }
-
     } else {
       clause : Clause;
-
       for token : tokens {
         val := string_to_int(token);
         if val == 0
           break;
         array_add(*clause, val);
       }
-
       array_add(*clauses, clause);
     }
   }
-  return sat_vars, clauses;
+  return num_variables, clauses;
 }
 
-naive_sat_solver :: (vars: [..]SAT_VAR, clauses: [..]Clause, level:=0)->bool {
+naive_sat_solver :: (vars: [..]SAT, clauses: [..]Clause, level:=0)->bool {
 
-  is_satisfiable :: (vars: [..]SAT_VAR, clauses: [..]Clause)->bool {
+  is_satisfiable :: (vars: [..]SAT, clauses: [..]Clause)->bool {
     for clause : clauses {
-      cl := SAT_VAR.FALSE;
+      cl := SAT.FALSE;
       for var : clause{
-        bool_value : SAT_VAR = ---;
+        bool_value : SAT = ---;
         if var < 0 {
           var = -var;
-          bool_value = vars[var-1] ^ SAT_VAR.TRUE;
+          bool_value = vars[var-1] ^ SAT.TRUE;
         } else {
           bool_value = vars[var-1];
         }
 
         cl = cl | bool_value;
       }
-      if cl == SAT_VAR.FALSE {
+      if cl == SAT.FALSE {
         return false;
       }
     }
@@ -75,135 +68,102 @@ naive_sat_solver :: (vars: [..]SAT_VAR, clauses: [..]Clause, level:=0)->bool {
     return is_satisfiable(vars, clauses);
   }
   
-  vars[level] = SAT_VAR.TRUE;
+  vars[level] = SAT.TRUE;
   if naive_sat_solver(vars, clauses, level + 1) {
     return true;
   }
 
-  vars[level] = SAT_VAR.FALSE;
+  vars[level] = SAT.FALSE;
   if naive_sat_solver(vars, clauses, level + 1) {
     return true;
   }
 
-  vars[level] = SAT_VAR.UNASSIGNED;
+  vars[level] = SAT.UNASSIGNED;
   return false;
 }
 
-boolean_constant_propagation :: (f: [..]Clause, a: [..]SAT_VAR)->bool {
-  TF := true;
+GraphNode :: struct {
+  clause := -1;
+  level  := -1;
+  edges  : [..] int;
+}
 
-  while(TF) {
-    TF = false;
-    // unit propagation
+ImplicationGraph :: [..] GraphNode;
+
+boolean_constant_propagation :: (f: [..]Clause, a: [..]SAT, graph: ImplicationGraph, level := 0)-> SAT {
+  while true {
+    cont := false;
     for clause : f {
-      count := 0;
-      index := -1;
-      is_not_total : bool = ---;
-      for var_num : clause {
-        is_not := var_num < 0;
-        if is_not {
-          var_num = (-var_num)-1;
-        } else {
-          var_num = var_num-1;
-        }
-        if a[var_num] == SAT_VAR.UNASSIGNED {
-          if count < 1 {
-            count = count + 1;
-            index = var_num;
-            is_not_total = is_not;
-          } else {
-            count = count + 1;
-            index = -1;
-            break;
-          }
-        } else if (a[var_num] == SAT_VAR.TRUE && !is_not) || (a[var_num]==SAT_VAR.FALSE && is_not) {
-          count = 0;
-          index = -1;
-          break;
-        }
+      index, val := unit_propagation(a, clause);
+      if val == SAT.CONFLICT {
+        return SAT.CONFLICT;
       }
-
-      // exactly one unassigned variable
-      if count == 1 {
-        if is_not_total {
-          a[index] = SAT_VAR.FALSE;
-        } else {
-          a[index] = SAT_VAR.TRUE;
-        }
-        TF = true;
+      if index != -1 {
+        a[index] = val;
+        cont = true;
       }
     }
 
-    //pure literal propagation.
-    for var : a {
-      if var != SAT_VAR.UNASSIGNED continue;
-      val := it_index;
-      pure : SAT_VAR = cast(SAT_VAR) 0;
+    if cont == false then break;
+  }
 
-      for clause : f {
+  return SAT.OKAY;
 
-        for var_num : clause {
-          if var_num < 0 {
-            var_num = -var_num - 1;
-            if a[var_num] == SAT_VAR.FALSE
-              continue clause;
-
-          } else {
-            var_num = var_num - 1;
-            if a[var_num] == SAT_VAR.TRUE
-              continue clause;
-          }
+  unit_propagation :: (a: [..]SAT, clause : Clause)->int, SAT {
+    count := 0;
+    index := -1;
+    value := SAT.UNASSIGNED;
+    for var : clause {
+      if var < 0 {
+        var = -var - 1;
+        if a[var] == SAT.FALSE then return -1, SAT.UNASSIGNED;
+        if a[var] == SAT.UNASSIGNED {
+          count = count + 1;
+          index = var;
+          value = SAT.FALSE;
         }
-
-        for var_num : clause {
-          index := var_num;
-          is_not := index < 0;
-          if is_not {
-            index = -index - 1;
-          } else {
-            index = index - 1;
-          }
-
-          if val != index continue;
-
-          if is_not {
-            pure |= SAT_VAR.FALSE;
-          } else {
-            pure |= SAT_VAR.TRUE;
-          }
+      } else {
+        var = var - 1;
+        if a[var] == SAT.TRUE then return -1, SAT.UNASSIGNED;
+        if a[var] == SAT.UNASSIGNED {
+          count = count + 1;
+          index = var;
+          value = SAT.TRUE;
         }
       }
-
-      if pure == SAT_VAR.TRUE {
-        a[val] = SAT_VAR.TRUE;
-        TF = true;
-      } else if pure == SAT_VAR.FALSE {
-        a[val] = SAT_VAR.FALSE;
-        TF = true;
-      }
-
+      if count > 1 then return -1, SAT.UNASSIGNED;
     }
+    if count == 1 {
+      return index, value;
+    } else {
+      assert(count == 0);
+      return -1, SAT.CONFLICT;
+    }
+  }
+
+  create_node :: (graph : ImplicationGraph, level: int, clause_num: int) {
 
   }
 
-  return true;
 }
 
-conflict_drive_clause_learning :: (a: [..]SAT_VAR, f: [..]Clause)->bool {
-  
-  if boolean_constant_propagation(f, a) {
-    return is_satisfiable(a, f);
+conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT {
+  a : [..] SAT;
+  graph : ImplicationGraph;
+  init_vars(*a, *graph, num_vars);
+  if boolean_constant_propagation(f, a, graph) {
+    return false, a;
   }
 
   level := 0;
   while has_unassigned_variables(a) {
     level = level + 1;
     decide(f, a);    
-    while boolean_constant_propagation(f, a) {
+    while boolean_constant_propagation(f, a, graph, level) {
       b, c := analyze_conflict();
       array_add(*f, c);
       if b < 0 {
-        return false;
+        return false, a;
       } else {
         backtrack(f, a, b);
         level = b;
@@ -211,11 +171,26 @@ conflict_drive_clause_learning :: (a: [..]SAT_VAR, f: [..]Clause)->bool {
     }
   }
 
-  return true;
-
+  return true, a;
 
   // helper functions.
-  backtrack :: (f: [..]Clause, a: [..]SAT_VAR, b: int) {
+  init_vars :: (a: *[..]SAT, G: *ImplicationGraph, num_vars: int) {
+    array_reserve(a, num_vars);
+    array_reserve(G, num_vars+1);
+    for i: 0..num_vars-1 {
+      node: GraphNode;
+      node.clause=-1;
+      node.level=-1;
+      array_add(a, SAT.UNASSIGNED);
+      array_add(G, node);
+    }
+    node: GraphNode;
+    node.clause=-1;
+    node.level=-1;
+    array_add(G, node);
+  }
+
+  backtrack :: (f: [..]Clause, a: [..]SAT, b: int) {
 
   }
 
@@ -224,21 +199,21 @@ conflict_drive_clause_learning :: (a: [..]SAT_VAR, f: [..]Clause)->bool {
     return -1, c;
   }
 
-  decide :: (f: [..]Clause, a: [..]SAT_VAR) {
+  decide :: (f: [..]Clause, a: [..]SAT) {
 
   }
 
-  has_unassigned_variables :: (a: [..]SAT_VAR)->bool #expand {
+  has_unassigned_variables :: (a: [..]SAT)->bool #expand {
     for var : a
-      if var == SAT_VAR.UNASSIGNED return true;
+      if var == SAT.UNASSIGNED return true;
     return false;
   }
 
 
   // TODO: just temporary. this is just useless
-  is_satisfiable :: (vars: [..]SAT_VAR, clauses: [..]Clause)->bool {
+  is_satisfiable :: (vars: [..]SAT, clauses: [..]Clause)->bool {
     for clause : clauses {
-      cl := SAT_VAR.FALSE;
+      cl := SAT.FALSE;
       for var : clause{
         is_not := var < 0;
         if is_not {
@@ -247,19 +222,19 @@ conflict_drive_clause_learning :: (a: [..]SAT_VAR, f: [..]Clause)->bool {
           var = var - 1;
         }
 
-        bool_value : SAT_VAR = SAT_VAR.FALSE;
-        if is_not && vars[var]==SAT_VAR.FALSE {
-          bool_value = SAT_VAR.TRUE;
-        } else if !is_not && vars[var]==SAT_VAR.TRUE {
-          bool_value = SAT_VAR.TRUE;
+        bool_value : SAT = SAT.FALSE;
+        if is_not && vars[var]==SAT.FALSE {
+          bool_value = SAT.TRUE;
+        } else if !is_not && vars[var]==SAT.TRUE {
+          bool_value = SAT.TRUE;
         }
  
-        if bool_value == SAT_VAR.TRUE {
-          cl = SAT_VAR.TRUE;
+        if bool_value == SAT.TRUE {
+          cl = SAT.TRUE;
           break;
         }
       }
-      if cl == SAT_VAR.FALSE {
+      if cl == SAT.FALSE {
         return false;
       }
     }
@@ -281,27 +256,19 @@ main :: () {
     print("-----------------------\n");
     print("%\n", file_name);
 
-    sat_vars, clauses := parse_sat_file(file_name);
+    num_vars, clauses := parse_sat_file(file_name);
     // sat solver
-    sat := conflict_drive_clause_learning(sat_vars, clauses);
+    sat, vars := conflict_drive_clause_learning(num_vars, clauses);
  
     if sat {
-      print("sat   ");
-      for var : sat_vars {
-        if var == SAT_VAR.TRUE
-          print(" x%    ", it_index+1);
-        else
-          print("-x%   ", it_index+1);
-      }
-      print("\n");
+      print("sat\n");
     } else {
+      for var : vars {
+        print("x%=%,  ", it_index, var);
+      }
       print("unsat\n");
     }
   }
 }
-
-
-
-
 
 
