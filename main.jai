@@ -193,14 +193,16 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     if index == -1 then break;
     level = level + 1;
     decide(f, a);
+    print("Deciding...\n");
 
     while boolean_constant_propagation(f, a, graph, level) == SAT.CONFLICT {
       b, c := analyze_conflict(f, a, graph, level);
       array_add(*f, c);
+      print("%\n", c);
       if b < 0 {
         return false, a;
       } else {
-        backtrack(f, a, b);
+        backtrack(f, a, b, graph);
         level = b;
       }
     }
@@ -225,8 +227,16 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     array_add(G, node);
   }
 
-  backtrack :: (f: [..]Clause, a: [..]SAT, b: int) {
-
+  backtrack :: (f: [..]Clause, a: [..]SAT, b: int, graph: ImplicationGraph) {
+    for *node: graph {
+      val := it_index;
+      if node.level > b {
+        a[val] = SAT.UNASSIGNED;
+        node.clause = -1;
+        node.level  = -1;
+        array_reset(*node.edges);
+      }
+    }
   }
 
   analyze_conflict :: (f: [..]Clause, a: [..]SAT, graph: ImplicationGraph, level: int)->(level: int, c: Clause) {
@@ -245,8 +255,8 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
       v    := var_of_lit(t);
       ante := antecedent(t);
       resolve(ante, c, t, v);
+      print("%\n", graph);
     }
-
     b := asserting_level(c);
     return b, c;
 
@@ -261,6 +271,7 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
         if a == t || -a == t continue;
         array_add(*clause, a);
       }
+      //print("% % %\n", ante, clause);
     }
 
     antecedent :: (t: int, c: *Clause) #expand {
@@ -281,6 +292,10 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     antecedent :: (t: int) -> Clause #expand {
       node := *`graph[t];
       clause_num := node.clause;
+      if clause_num == -1 return None;
+
+
+      print("clause_num = %, node:=%, graph:=%\n", clause_num, <<node, graph);
       ret := `f[clause_num];
       return ret;
     }
@@ -361,6 +376,7 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
 None : Clause; // ...Don't know if there's a better way to do this.
 
 main :: () {
+  random_seed(-12429587);
   args := get_command_line_arguments();
   if args.count == 1 {
     print("Please supply a *.cnf sat file to the program.\n");
@@ -380,18 +396,18 @@ main :: () {
     if sat {
       for var : vars {
         if var == SAT.TRUE {
-          print(" x%,   ", it_index);
+          print(" x%,   ", it_index+1);
         } else if var == SAT.FALSE {
-          print("-x%,   ", it_index);
+          print("-x%,   ", it_index+1);
         }
       }
       print("sat\n");
     } else {
       for var : vars {
         if var == SAT.TRUE {
-          print(" x%,   ", it_index);
+          print(" x%,   ", it_index+1);
         } else if var == SAT.FALSE {
-          print("-x%,   ", it_index);
+          print("-x%,   ", it_index+1);
         }
       }
       print("unsat\n");
