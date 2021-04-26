@@ -412,13 +412,6 @@ main :: () {
       }
       print("sat\n");
     } else {
-      for var : vars {
-        if var == SAT.TRUE {
-          print(" x%,   ", it_index+1);
-        } else if var == SAT.FALSE {
-          print("-x%,   ", it_index+1);
-        }
-      }
       print("unsat\n");
     }
   }
