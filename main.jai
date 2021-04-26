@@ -13,6 +13,7 @@ parse_sat_file :: (file_name: string)-> int, [..]Clause {
   lines := split(text, "\n");
   clauses : [..]Clause;
   num_variables := -1;
+  num_clauses   := -1;
 
   for line : lines {
     tokens := split(line, " ");
@@ -25,12 +26,13 @@ parse_sat_file :: (file_name: string)-> int, [..]Clause {
 
     else if equal(tokens[0], "p") {
       num_variables = string_to_int(tokens[2]);
-      num_clauses   := string_to_int(tokens[3]);
+      num_clauses   = string_to_int(tokens[3]);
       array_reserve(*clauses, num_clauses);
     } else {
       clause : Clause;
       for token : tokens {
-        val := string_to_int(token);
+        val, correct := string_to_int(token);
+        assert(correct, "Not parsed correctly!");
         if val == 0
           break;
         array_add(*clause, val);
@@ -38,6 +40,7 @@ parse_sat_file :: (file_name: string)-> int, [..]Clause {
       array_add(*clauses, clause);
     }
   }
+
   return num_variables, clauses;
 }
 
@@ -103,6 +106,7 @@ boolean_constant_propagation :: (f: [..]Clause, a: [..]SAT, graph: ImplicationGr
       }
       if index != -1 {
         a[index] = val;
+        print("unit propagate: x%=% %\n", index, a[index], level);
         create_node(clause, graph, index, level, clause_num);
         cont = true;
       }
@@ -193,9 +197,11 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     if index == -1 then break;
     level = level + 1;
     decide(f, a);
+    print("Deciding x%=%, level=%\n", index, a[index], level);
     while boolean_constant_propagation(f, a, graph, level) == SAT.CONFLICT {
       b, c := analyze_conflict(f, a, graph, level);
       array_add(*f, c);
+      print("adding c:=%\n", c);
       if b < 0 {
         return false, a;
       } else {
@@ -253,7 +259,9 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
       t    := last_assigned_lit_at_level(c, d);
       v    := var_of_lit(t);
       ante := antecedent(t);
+      print("Resolving ante=%, c=%,  t=%, v=%\n", ante, c, t, v);
       resolve(ante, *c, t, v);
+      print("Resolved  ante=%, c=%,  t=%, v=%\n", ante, c, t, v);
     }
     b := asserting_level(c);
     return b, c;
@@ -274,41 +282,41 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     }
 
     antecedent :: (t: int, c: *Clause) #expand {
-      node := *`graph[t];  // BUG in compiler.
+      node := *graph[t];  
       clause_num := node.clause;
-      for var : `f[clause_num] {
+      for var : f[clause_num] {
         array_add(c, var);
       }
 
-      `head = `head + 1;
+      head = head + 1;
       for val: node.edges {
-        if `graph[val].level == node.level {
-          array_add(*`queue, val);
+        if graph[val].level == node.level {
+          array_add(*queue, val);
         }
       }
     }
 
     antecedent :: (t: int) -> Clause #expand {
-      node := *`graph[t];
+      node := *graph[t];
       clause_num := node.clause;
       if clause_num == -1 return None;
-      ret := `f[clause_num];
+      ret := f[clause_num];
       return ret;
     }
 
     last_assigned_lit_at_level :: (c: Clause, d: int)->int #expand {
-      t := `queue[`head];
-      `head = `head + 1;
-      for val: `graph[t].edges {
-        if `graph[val].level == d && !array_find(`queue, val) {
-          array_add(*`queue, val);
+      t := queue[head];
+      head = head + 1;
+      for val: graph[t].edges {
+        if graph[val].level == d && !array_find(queue, val) {
+          array_add(*queue, val);
         }
       }
       return t;
     }
 
     var_of_lit :: (t: int)->SAT #expand {
-      return `a[t];
+      return a[t];
     }
 
     one_lit_at_level :: (c: Clause, d: int)->bool #expand {
@@ -323,7 +331,7 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
           var = var - 1;
         }
 
-        if `graph[var].level == d {
+        if graph[var].level == d {
           count = count + 1;
           if count > 1 {
             return false;
@@ -342,9 +350,9 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
         } else {
           var = var - 1;
         }
-        var_level := `graph[var].level;
-        if var_level == `d continue;
-        level = max(var_level, `d);
+        var_level := graph[var].level;
+        if var_level == d continue;
+        level = max(var_level, d);
       }
       return level;
     }
@@ -358,8 +366,8 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     } else {
       a[`index] = SAT.FALSE;
     }
-    node := *`graph[`index];
-    node.level = `level;
+    node := *graph[`index];
+    node.level = level;
     node.clause = -1;
   }
 
