@@ -193,12 +193,9 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     if index == -1 then break;
     level = level + 1;
     decide(f, a);
-    print("Deciding...%\n", a);
-
     while boolean_constant_propagation(f, a, graph, level) == SAT.CONFLICT {
       b, c := analyze_conflict(f, a, graph, level);
       array_add(*f, c);
-      print("clause added:=%, b:=%, clause.count:=%\n", c, b, f.count);
       if b < 0 {
         return false, a;
       } else {
@@ -252,26 +249,27 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     array_add(*queue, conflict);
 
     antecedent(conflict, *c);
-    while head < queue.count && !one_lit_at_level(c, d) {
+    while !one_lit_at_level(c, d) {
       t    := last_assigned_lit_at_level(c, d);
       v    := var_of_lit(t);
       ante := antecedent(t);
-      resolve(ante, c, t, v);
-      print("ante=%, c=%\n", ante, c);
+      resolve(ante, *c, t, v);
     }
     b := asserting_level(c);
     return b, c;
 
-    resolve :: (ante: Clause, clause: Clause, t: int, v: SAT) {
+    resolve :: (ante: Clause, clause: *Clause, t: int, v: SAT) {
       t = t + 1;
-      for var : clause {
+      for var : <<clause {
         if var == t || -var == t {
           remove var;
         }
       }
       for a : ante {
         if a == t || -a == t continue;
-        array_add(*clause, a);
+        found, i := array_find(<<clause, a);
+        if found continue;
+        array_add(clause, a);
       }
     }
 
@@ -294,9 +292,6 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
       node := *`graph[t];
       clause_num := node.clause;
       if clause_num == -1 return None;
-
-
-      //print("clause_num = %, node:=%, graph:=%\n", clause_num, <<node, graph);
       ret := `f[clause_num];
       return ret;
     }
@@ -318,6 +313,9 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
 
     one_lit_at_level :: (c: Clause, d: int)->bool #expand {
       count := 0;
+
+      if c.count == 1 return true;
+
       for var: c {
         if var < 0 {
           var = -var - 1;
@@ -327,7 +325,9 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
 
         if `graph[var].level == d {
           count = count + 1;
-          if count > 1 return false;
+          if count > 1 {
+            return false;
+          }
         }
       }
 
@@ -378,7 +378,6 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
 None : Clause; // ...Don't know if there's a better way to do this.
 
 main :: () {
-  random_seed(-12429587);
   args := get_command_line_arguments();
   if args.count == 1 {
     print("Please supply a *.cnf sat file to the program.\n");
