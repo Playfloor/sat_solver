@@ -193,12 +193,12 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     if index == -1 then break;
     level = level + 1;
     decide(f, a);
-    print("Deciding...\n");
+    print("Deciding...%\n", a);
 
     while boolean_constant_propagation(f, a, graph, level) == SAT.CONFLICT {
       b, c := analyze_conflict(f, a, graph, level);
       array_add(*f, c);
-      print("%\n", c);
+      print("clause added:=%, b:=%, clause.count:=%\n", c, b, f.count);
       if b < 0 {
         return false, a;
       } else {
@@ -229,9 +229,11 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
 
   backtrack :: (f: [..]Clause, a: [..]SAT, b: int, graph: ImplicationGraph) {
     for *node: graph {
-      val := it_index;
       if node.level > b {
-        a[val] = SAT.UNASSIGNED;
+        val := it_index;
+        if val < a.count {
+          a[val] = SAT.UNASSIGNED;
+        }
         node.clause = -1;
         node.level  = -1;
         array_reset(*node.edges);
@@ -250,12 +252,12 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     array_add(*queue, conflict);
 
     antecedent(conflict, *c);
-    while !one_lit_at_level(c, d) {
+    while head < queue.count && !one_lit_at_level(c, d) {
       t    := last_assigned_lit_at_level(c, d);
       v    := var_of_lit(t);
       ante := antecedent(t);
       resolve(ante, c, t, v);
-      print("%\n", graph);
+      print("ante=%, c=%\n", ante, c);
     }
     b := asserting_level(c);
     return b, c;
@@ -271,7 +273,6 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
         if a == t || -a == t continue;
         array_add(*clause, a);
       }
-      //print("% % %\n", ante, clause);
     }
 
     antecedent :: (t: int, c: *Clause) #expand {
@@ -295,13 +296,14 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
       if clause_num == -1 return None;
 
 
-      print("clause_num = %, node:=%, graph:=%\n", clause_num, <<node, graph);
+      //print("clause_num = %, node:=%, graph:=%\n", clause_num, <<node, graph);
       ret := `f[clause_num];
       return ret;
     }
 
     last_assigned_lit_at_level :: (c: Clause, d: int)->int #expand {
       t := `queue[`head];
+      `head = `head + 1;
       for val: `graph[t].edges {
         if `graph[val].level == d && !array_find(`queue, val) {
           array_add(*`queue, val);
