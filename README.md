@@ -14,8 +14,11 @@ p cnf 5 3
 ```
 The `p cnf 5 3` indicates that there are 5 boolean values to solve and 3 clauses to solve for.
 
-## Resources
-Boolean Satisfiability Solver (https://en.wikipedia.org/wiki/Boolean_satisfiability_problem)
-DPLL Algorithm: (https://en.wikipedia.org/wiki/DPLL_algorithm)
-Conflict Driven Clause Learning: (https://en.wikipedia.org/wiki/Conflict-Driven_Clause_Learning)
-DIMACS format: (http://www.satcompetition.org/2004/format-solvers2004.html)
+# Resources
+Boolean Satisfiability Solver https://en.wikipedia.org/wiki/Boolean_satisfiability_problem
+
+DPLL Algorithm: https://en.wikipedia.org/wiki/DPLL_algorithm
+
+Conflict Driven Clause Learning: https://en.wikipedia.org/wiki/Conflict-Driven_Clause_Learning
+
+DIMACS format: http://www.satcompetition.org/2004/format-solvers2004.html
