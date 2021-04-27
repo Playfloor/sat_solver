@@ -181,7 +181,7 @@ boolean_constant_propagation :: (f: [..]Clause, a: [..]SAT, graph: ImplicationGr
   }
 }
 
-conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT {
+conflict_driven_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT {
   a : [..] SAT;
   graph : ImplicationGraph;
   init_vars(*a, *graph, num_vars);
@@ -349,6 +349,9 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     }
 
     asserting_level :: (c: Clause)->int #expand {
+      if c.count == 1 return 0;
+
+
       level := 0;
       for var: c {
         if var < 0 {
@@ -401,7 +404,7 @@ main :: () {
 
     num_vars, clauses := parse_sat_file(file_name);
     // sat solver
-    sat, vars := conflict_drive_clause_learning(num_vars, clauses);
+    sat, vars := conflict_driven_clause_learning(num_vars, clauses);
  
     if sat {
       for var : vars {
