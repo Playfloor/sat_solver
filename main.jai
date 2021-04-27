@@ -32,7 +32,7 @@ parse_sat_file :: (file_name: string)-> int, [..]Clause {
       clause : Clause;
       for token : tokens {
         val, correct := string_to_int(token);
-        assert(correct, "Not parsed correctly!");
+        assert(correct, "Not parsed correctly, token=%, val=%", tokens, val);
         if val == 0
           break;
         array_add(*clause, val);
@@ -106,7 +106,7 @@ boolean_constant_propagation :: (f: [..]Clause, a: [..]SAT, graph: ImplicationGr
       }
       if index != -1 {
         a[index] = val;
-        print("unit propagate: x%=% %\n", index, a[index], level);
+        print("unit propagate: x%=% | level=% | clause num=% | clause:=%\n", index, a[index], level, clause_num, clause);
         create_node(clause, graph, index, level, clause_num);
         cont = true;
       }
@@ -193,12 +193,18 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
 
   level := 0;
   while true {
-    index := has_unassigned_variables(a);
-    if index == -1 then break;
+    found, index := has_unassigned_variables(a);
+    if found == false then break;
     level = level + 1;
     decide(f, a);
     print("Deciding x%=%, level=%\n", index, a[index], level);
     while boolean_constant_propagation(f, a, graph, level) == SAT.CONFLICT {
+
+      for node : graph {
+        if node.level != -1
+          print("x%@%, clause=%, edges=%\n",it_index, node.level, node.clause, node.edges);
+      }
+
       b, c := analyze_conflict(f, a, graph, level);
       array_add(*f, c);
       print("adding c:=%\n", c);
@@ -242,6 +248,13 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
         array_reset(*node.edges);
       }
     }
+
+    // reset conflict node.
+    conflict := graph.count - 1;
+    node := *graph[conflict];
+    node.clause = -1;
+    node.level  = -1;
+    array_reset(*node.edges);
   }
 
   analyze_conflict :: (f: [..]Clause, a: [..]SAT, graph: ImplicationGraph, level: int)->(level: int, c: Clause) {
@@ -267,6 +280,7 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     return b, c;
 
     resolve :: (ante: Clause, clause: *Clause, t: int, v: SAT) {
+      if ante.count == 0 return; // antecendent is empty, do nothing.
       t = t + 1;
       for var : <<clause {
         if var == t || -var == t {
@@ -305,6 +319,7 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     }
 
     last_assigned_lit_at_level :: (c: Clause, d: int)->int #expand {
+      print("queue: %\n", queue);
       t := queue[head];
       head = head + 1;
       for val: graph[t].edges {
@@ -371,14 +386,9 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     node.clause = -1;
   }
 
-  has_unassigned_variables :: (a: [..]SAT)->int #expand {
-    for var : a {
-      var_num := it_index;
-      if var == SAT.UNASSIGNED {
-        return var_num;
-      }
-    }
-    return -1;
+  has_unassigned_variables :: (a: [..]SAT)->bool,int #expand {
+    found, index := array_find(a, SAT.UNASSIGNED);
+    return found, index;
   }
 
 }
