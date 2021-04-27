@@ -106,7 +106,6 @@ boolean_constant_propagation :: (f: [..]Clause, a: [..]SAT, graph: ImplicationGr
       }
       if index != -1 {
         a[index] = val;
-        print("unit propagate: x%=% | level=% | clause num=% | clause:=%\n", index, a[index], level, clause_num, clause);
         create_node(clause, graph, index, level, clause_num);
         cont = true;
       }
@@ -197,23 +196,16 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     if found == false then break;
     level = level + 1;
     decide(f, a);
-    print("Deciding x%=%, level=%\n", index, a[index], level);
     while boolean_constant_propagation(f, a, graph, level) == SAT.CONFLICT {
-
-      for node : graph {
-        if node.level != -1
-          print("x%@%, clause=%, edges=%\n",it_index, node.level, node.clause, node.edges);
-      }
-
       b, c := analyze_conflict(f, a, graph, level);
       array_add(*f, c);
-      print("adding c:=%\n", c);
+      print("Clause CRAZY: %, FORMULA NUMBER: %, a: %\n", c, f.count, a);
       if b < 0 {
         return false, a;
-      } else {
-        backtrack(f, a, b, graph);
-        level = b;
-      }
+      } 
+
+      backtrack(f, a, b, graph);
+      level = b;
     }
   }
 
@@ -272,9 +264,9 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
       t    := last_assigned_lit_at_level(c, d);
       v    := var_of_lit(t);
       ante := antecedent(t);
-      print("Resolving ante=%, c=%,  t=%, v=%\n", ante, c, t, v);
+      print("resing  c = %, a = %\n", c, ante);
       resolve(ante, *c, t, v);
-      print("Resolved  ante=%, c=%,  t=%, v=%\n", ante, c, t, v);
+      print("resolve c = %, a = %\n", c, ante);
     }
     b := asserting_level(c);
     return b, c;
@@ -319,11 +311,10 @@ conflict_drive_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT 
     }
 
     last_assigned_lit_at_level :: (c: Clause, d: int)->int #expand {
-      print("queue: %\n", queue);
       t := queue[head];
       head = head + 1;
       for val: graph[t].edges {
-        if graph[val].level == d && !array_find(queue, val) {
+        if graph[val].level == d {   //  WEIRD IDEAS> && !array_find(queue, val) {
           array_add(*queue, val);
         }
       }
