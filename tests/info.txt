@@ -1,1 +1,3 @@
 resources for sat problems: https://people.sc.fsu.edu/~jburkardt/data/cnf/cnf.html
+https://www.cs.ubc.ca/~hoos/SATLIB/benchm.html
+

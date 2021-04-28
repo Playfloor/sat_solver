@@ -32,7 +32,8 @@ parse_sat_file :: (file_name: string)-> int, [..]Clause {
       clause : Clause;
       for token : tokens {
         val, correct := string_to_int(token);
-        assert(correct, "Not parsed correctly, token=%, val=%", tokens, val);
+        if correct == false then continue;
+        //assert(correct, "Not parsed correctly, token=%, val=%", tokens, val);
         if val == 0
           break;
         array_add(*clause, val);
