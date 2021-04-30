@@ -187,27 +187,24 @@ conflict_driven_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT
   graph : ImplicationGraph;
   init_vars(*a, *graph, num_vars);
 
-  if boolean_constant_propagation(f, a, graph) == SAT.CONFLICT {
-    return false, a;
-  }
-
   level := 0;
   while true {
+    if boolean_constant_propagation(f, a, graph, level) == SAT.CONFLICT {
+      print("CONFLICT\n");
+      //b, c := analyze_conflict(f, a, graph, level);
+      //array_add(*f, c);
+      level = level - 1;//analyze_conflict(f, a, graph, level);
+      if level < 0 {
+        return false, a;
+      }
+      //backtrack(f, a, b, graph);
+      //level = b;
+      continue;
+    }
     found, index := has_unassigned_variables(a);
     if found == false then break;
     level = level + 1;
     decide(f, a);
-    while boolean_constant_propagation(f, a, graph, level) == SAT.CONFLICT {
-      b, c := analyze_conflict(f, a, graph, level);
-      array_add(*f, c);
-      print("Clause CRAZY: %, FORMULA NUMBER: %, a: %\n", c, f.count, a);
-      if b < 0 {
-        return false, a;
-      } 
-
-      backtrack(f, a, b, graph);
-      level = b;
-    }
   }
 
   return true, a;
@@ -250,7 +247,8 @@ conflict_driven_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT
     array_reset(*node.edges);
   }
 
-  analyze_conflict :: (f: [..]Clause, a: [..]SAT, graph: ImplicationGraph, level: int)->(level: int, c: Clause) {
+  analyze_conflict :: (f: [..]Clause, a: [..]SAT, graph: ImplicationGraph, level: int)->(level: int) {
+    /*
     d := level;
     if d == 0 return -1, None;
 
@@ -265,12 +263,13 @@ conflict_driven_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT
       t    := last_assigned_lit_at_level(c, d);
       v    := var_of_lit(t);
       ante := antecedent(t);
-      print("resing  c = %, a = %\n", c, ante);
+      //print("resing  c = %, a = %\n", c, ante);
       resolve(ante, *c, t, v);
-      print("resolve c = %, a = %\n", c, ante);
+      //print("resolve c = %, a = %\n", c, ante);
     }
     b := asserting_level(c);
-    return b, c;
+    */
+    return level - 1;
 
     resolve :: (ante: Clause, clause: *Clause, t: int, v: SAT) {
       if ante.count == 0 return; // antecendent is empty, do nothing.
@@ -315,7 +314,7 @@ conflict_driven_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT
       t := queue[head];
       head = head + 1;
       for val: graph[t].edges {
-        if graph[val].level == d {   //  WEIRD IDEAS> && !array_find(queue, val) {
+        if graph[val].level == d {   //  WEIRD IDEAS> && !array_find(queue, val)
           array_add(*queue, val);
         }
       }
@@ -373,8 +372,10 @@ conflict_driven_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT
     rand := random_get();
     if rand & 1 {
       a[`index] = SAT.TRUE;
+      print("x%=T\n", `index);
     } else {
       a[`index] = SAT.FALSE;
+      print("x%=F\n", `index);
     }
     node := *graph[`index];
     node.level = level;
