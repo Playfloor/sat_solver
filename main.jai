@@ -12,7 +12,7 @@ main :: () {
 
   file_name := args[1];
   num_vars, clauses := parse_sat_file(file_name);
-  sat, sat_vars := inline search(num_vars, clauses);
+  sat, sat_vars := search(num_vars, clauses);
 
   if sat {
     for clause: clauses {
@@ -110,24 +110,20 @@ backtrack :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int) {
       array_add(assigns, log_var);
       break;
     }
-    if log_var.clause_idx == -1 {
-      idx := log_var.var_num;
-      assign_value(sat_vars, idx, false);
-      print("Decide x%=false\n", idx);
-      array_add(assigns, create_log_var(idx, level, -1));
-    } else {
-      print("Backtracking level=%, x%=???\n", log_var.level, log_var.var_num);
-      unassign_value(sat_vars, log_var.var_num);
-    }
+    print("Backtracking level=%, x%=???\n", log_var.level, log_var.var_num);
+    unassign_value(sat_vars, log_var.var_num);
   }
 }
 
 decide :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int) #expand {
-  for val, idx: sat_vars {
-    if val == BoolAssign.Unass {
-      assign_value(sat_vars, idx, true);
-      print("Decide x%=true\n", idx);
-      array_add(assigns, create_log_var(idx, level, -1));
+  while true {
+    r := random_get() % sat_vars.count;
+    bool_assign := value_at(<<sat_vars, r);
+    if bool_assign == BoolAssign.Unass {
+      b := cast(bool) (random_get() % 2);
+      assign_value(sat_vars, r, b);
+      print("Decide x%=% @ level=%\n", r, b, level);
+      array_add(assigns, create_log_var(r, level, -1));
       break;
     }
   }
