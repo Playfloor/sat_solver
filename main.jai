@@ -1,18 +1,36 @@
 #import "Basic";
 #import "File";
 #import "String";
-#import "Random";
 
-SAT :: enum s8 { UNASSIGNED :: TRUE|FALSE; FALSE :: 1; TRUE :: 2; CONFLICT :: 4; OKAY :: 0; }
+main :: () {
+  args := get_command_line_arguments();
+  if args.count == 1 {
+    print("Please supply a *.cnf sat file to the program.\n");
+    return;
+  }
 
+  file_name := args[1];
+  num_vars, clauses := parse_sat_file(file_name);
+  sat, sat_vars := search(num_vars, clauses);
 
-Clause :: [..] int;
+  if sat {
+    for clause: clauses {
+      print_clause(clause);
+    }
+    for s: sat_vars {
+      print("x%=%, ", it_index, s);
+    }
+    print("sat\n");
+  } else {
+    print("unsat\n");
+  }
+}
 
 parse_sat_file :: (file_name: string)-> int, [..]Clause {
   text := read_entire_file(file_name);
   lines := split(text, "\n");
   clauses : [..]Clause;
-  num_variables := -1;
+  num_vars := -1;
   num_clauses   := -1;
 
   for line : lines {
@@ -25,7 +43,7 @@ parse_sat_file :: (file_name: string)-> int, [..]Clause {
     }
 
     else if equal(tokens[0], "p") {
-      num_variables = string_to_int(tokens[2]);
+      num_vars = string_to_int(tokens[2]);
       num_clauses   = string_to_int(tokens[3]);
       array_reserve(*clauses, num_clauses);
     } else {
@@ -36,391 +54,251 @@ parse_sat_file :: (file_name: string)-> int, [..]Clause {
         //assert(correct, "Not parsed correctly, token=%, val=%", tokens, val);
         if val == 0
           break;
-        array_add(*clause, val);
+        if val < 0 {
+          val = -val - 1;
+          var : Var = cast(Var) Var.NOT | (cast(Var) val);
+          array_add(*clause, var);
+        } else {
+          val = val - 1;
+          var : Var = cast(Var) val;
+          array_add(*clause, var);
+        }
+
+
       }
       array_add(*clauses, clause);
     }
   }
 
-  return num_variables, clauses;
+  return num_vars, clauses;
 }
 
-naive_sat_solver :: (vars: [..]SAT, clauses: [..]Clause, level:=0)->bool {
+// following the minisat pseudo-code
+search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
+  // conflict driven clause learning
+  sat_vars := create_sat_vars(num_vars);
+  stack: [..]Var;
 
-  is_satisfiable :: (vars: [..]SAT, clauses: [..]Clause)->bool {
-    for clause : clauses {
-      cl := SAT.FALSE;
-      for var : clause{
-        bool_value : SAT = ---;
-        if var < 0 {
-          var = -var;
-          bool_value = vars[var-1] ^ SAT.TRUE;
-        } else {
-          bool_value = vars[var-1];
-        }
-
-        cl = cl | bool_value;
-      }
-      if cl == SAT.FALSE {
-        return false;
-      }
+  while true {
+    status := boolean_constant_propagation(*sat_vars, formula);
+    if status == Propagation_Status.Conflict {
+      return false, sat_vars; // TODO
     }
-    return true;
+
+    if all_variables_assigned(sat_vars) then
+      break;
+    decide(*sat_vars, *stack);
   }
 
+  return true, sat_vars;
+}
 
-  if level >= vars.count then {
-    return is_satisfiable(vars, clauses);
+init_decide := true; // TODO: temporary global
+
+decide :: (sat_vars: *Sat_Vars, stack: *[..]Var) #expand {
+  if init_decide {
+    for val, idx: sat_vars {
+      if val == BoolAssign.Unass {
+        array_add(stack, Var.NOT | cast(Var) idx);
+        array_add(stack, cast(Var) idx);
+        break;
+      }
+    }
+    init_decide = false;
   }
   
-  vars[level] = SAT.TRUE;
-  if naive_sat_solver(vars, clauses, level + 1) {
-    return true;
+  top := pop(stack);
+  val, not := get_var_num(top);
+  if not {
+    assign_value(sat_vars, val, false);
+    print("Decide x%=false\n", val);
+  } else {
+    assign_value(sat_vars, val, true);
+    print("Decide x%=true\n", val);
   }
 
-  vars[level] = SAT.FALSE;
-  if naive_sat_solver(vars, clauses, level + 1) {
-    return true;
-  }
-
-  vars[level] = SAT.UNASSIGNED;
-  return false;
-}
-
-GraphNode :: struct {
-  clause := -1;
-  level  := -1;
-  edges  : [..] int;
-}
-
-ImplicationGraph :: [..] GraphNode;
-
-boolean_constant_propagation :: (f: [..]Clause, a: [..]SAT, graph: ImplicationGraph, level := 0)-> SAT {
-  while true {
-    cont := false;
-    for clause : f {
-      clause_num := it_index;
-      index, val := unit_propagation(a, clause);
-      if val == SAT.CONFLICT {
-        create_conflict_node(clause, graph, level, clause_num);
-        return SAT.CONFLICT;
-      }
-      if index != -1 {
-        a[index] = val;
-        create_node(clause, graph, index, level, clause_num);
-        cont = true;
-      }
-    }
-
-    if cont == false {
+  for val, idx: sat_vars {
+    if val == BoolAssign.Unass {
+      array_add(stack, Var.NOT | cast(Var) idx);
+      array_add(stack, cast(Var) idx);
       break;
     }
   }
+}
 
-  return SAT.OKAY;
+Sat_Vars :: struct {
+  tf_flags  : [..] u64;
+  assigned: [..] u64;
+  num_assigned: int;
+  count: int;
+}
 
-  unit_propagation :: (a: [..]SAT, clause : Clause)->int, SAT {
+unassign_value :: (sat_vars: *Sat_Vars, index: int) {
+  arr_index := index / 64;
+  bit_value := index % 64;
+  sat_vars.assigned[arr_index] &= ~(cast(u64) 1 << bit_value);
+  sat_vars.tf_flags[arr_index] &= ~(cast(u64) 1 << bit_value);
+  sat_vars.num_assigned -= 1;
+}
+
+value_at :: (sat_vars: Sat_Vars, index: int)-> BoolAssign {
+  arr_index := index / 64;
+  bit_value := index % 64;
+
+  assigned := sat_vars.assigned[arr_index] & (cast(u64) 1 << bit_value);
+  if assigned == 0  // not assigned
+    return BoolAssign.Unass;
+  bool_val := sat_vars.tf_flags[arr_index] & (cast(u64) 1 << bit_value);
+  if bool_val
+    return BoolAssign.True;
+  else
+    return BoolAssign.False;
+}
+
+assign_value :: (sat_vars: *Sat_Vars, index: int, TF: bool) {
+  arr_index := index / 64;
+  bit_value := index % 64;
+
+  sat_vars.assigned[arr_index] |= (cast(u64) 1 << bit_value);
+  if TF {
+    sat_vars.tf_flags[arr_index] |= (cast(u64) 1 << bit_value);
+  } else {
+    sat_vars.tf_flags[arr_index] &= ~(cast(u64) 1 << bit_value);
+  }
+
+  sat_vars.num_assigned += 1;
+}
+
+create_sat_vars :: inline (count: int)->Sat_Vars {
+  sat_vars: Sat_Vars;
+  sat_vars.count = count;
+  sat_vars.num_assigned = 0;
+
+  array_size := count / 64;
+  if count % 64 > 0 
+    array_size += 1;
+  array_reserve(*sat_vars.tf_flags, array_size);
+  array_reserve(*sat_vars.assigned, array_size);
+  for i: 0..array_size-1 {
+    array_add(*sat_vars.tf_flags, 0);
+    array_add(*sat_vars.assigned, 0);
+  }
+
+  return sat_vars;
+}
+
+Clause   :: [..] Var;
+
+Var :: enum_flags s32 {
+  NOT       :: 0x8000_0000;
+  SIGN_MASK :: 0x7fff_ffff;
+  ONE :: 0x1;
+}
+
+BoolAssign :: enum s8 {
+  True  :: 1;
+  Flip  :: 1;
+  False :: 0;
+  Unass :: 0xFF;
+}
+
+get_var_num :: inline (v: Var) -> s64, BoolAssign {
+  val := cast(s64) (Var.SIGN_MASK & v);
+  not := cast(BoolAssign) (((Var.NOT & v) >> 31) & Var.ONE);
+  //print("get_var_num: %\n", formatInt(cast(s8)not, base=16));
+  return val, not;
+}
+
+for_expansion :: (self: *Sat_Vars, body: Code, f: For_Flags) #expand {
+  for i: 0..self.count-1 {
+    `it := value_at(<<self, i);
+    `it_index := i;
+    #insert body;
+  }
+}
+
+print_clause :: (clause: Clause) {
+  print("(");
+  for var: clause {
+    val, not := get_var_num(var);
+    if not {
+      print("-x% v", val);
+    } else {
+      print(" x% v", val);
+    }
+  }
+  print(")\n");
+}
+
+boolean_constant_propagation :: (sat: *Sat_Vars, formula: [..]Clause)->Propagation_Status {
+  TF := true;
+  while TF {
+    TF = false;
+    for clause, clause_num: formula {
+      status, idx, val := unit_propagation(<<sat, clause);
+      if status == {
+      case Unit_Status.Nothing;
+        // do nothing
+      case Unit_Status.Conflict;
+        // TODO: handle conflict!
+        return Propagation_Status.Conflict;
+      case Unit_Status.UnitPropagate;
+        assign_value(sat, idx, val);
+        print("assign x%=%\n", idx, val);
+        TF = true;
+      case;
+        assert(false);
+      }
+    }
+  }
+  return Propagation_Status.NoConflict;
+
+  unit_propagation :: (sat: Sat_Vars, clause: Clause)->Unit_Status,int,bool {
+    val_ret: s64 = ---;
+    bool_ret: bool = ---;
     count := 0;
-    index := -1;
-    value := SAT.UNASSIGNED;
-    for var : clause {
-      if var < 0 {
-        var = -var - 1;
-        if a[var] == SAT.FALSE then return -1, SAT.OKAY;
-        if a[var] == SAT.UNASSIGNED {
-          count = count + 1;
-          index = var;
-          value = SAT.FALSE;
-        }
-      } else {
-        var = var - 1;
-        if a[var] == SAT.TRUE then return -1, SAT.OKAY;
-        if a[var] == SAT.UNASSIGNED {
-          count = count + 1;
-          index = var;
-          value = SAT.TRUE;
-        }
-      }
-      if count > 1 then return -1, SAT.UNASSIGNED;
-    }
-    if count == 1 {
-      return index, value;
-    } else {
-      assert(count == 0);
-      return -1, SAT.CONFLICT;
-    }
-  }
 
-  create_node :: (clause: Clause, graph: ImplicationGraph, index: int, level: int, clause_num: int) {
-    node := *graph[index];
-    node.level  = level;
-    node.clause = clause_num;
     for var : clause {
-      if var < 0 {
-        var = (-var)-1;
-      } else {
-        var = var - 1;
+      val, not := get_var_num(var);
+      assert(not == BoolAssign.True || not == BoolAssign.False, "not=%\n", not);
+      bool_val := value_at(sat, val);
+      if bool_val == BoolAssign.Unass {
+        val_ret = val;
+        bool_ret = cast(bool) (not ^ BoolAssign.Flip);
+        count = count + 1;
+        continue;
       } 
-      if var != index {
-        array_add(*node.edges, var);
+      bool_val ^= not;
+      if bool_val == BoolAssign.True {
+        return Unit_Status.Nothing, -1, false;
       }
     }
+    if count > 1  // too many vars unassigned to use unit propagation
+      return Unit_Status.Nothing, -1, false;
+
+    if count == 0 // all vars unassigned, and there is a conflict.
+      return Unit_Status.Conflict, -1, false;
+    
+    // unit propagate, there is one unassigned, and unit propagate it.
+    return Unit_Status.UnitPropagate, val_ret, bool_ret;
   }
 
-  create_conflict_node :: (clause: Clause, graph: ImplicationGraph, level: int, clause_num: int) {
-    node := *graph[graph.count - 1];  // get last node i.e. the conflict node.
-    node.level = level;
-    node.clause = clause_num;
-    for var : clause {
-      if var < 0 {
-        var = (-var)-1;
-      } else {
-        var = var - 1;
-      } 
-      array_add(*node.edges, var);
-    }
-  }
-}
-
-conflict_driven_clause_learning :: (num_vars: int, f: [..]Clause)->bool, [..]SAT {
-  a : [..] SAT;
-  graph : ImplicationGraph;
-  init_vars(*a, *graph, num_vars);
-
-  level := 0;
-  while true {
-    if boolean_constant_propagation(f, a, graph, level) == SAT.CONFLICT {
-      print("CONFLICT\n");
-      //b, c := analyze_conflict(f, a, graph, level);
-      //array_add(*f, c);
-      level = level - 1;//analyze_conflict(f, a, graph, level);
-      if level < 0 {
-        return false, a;
-      }
-      //backtrack(f, a, b, graph);
-      //level = b;
-      continue;
-    }
-    found, index := has_unassigned_variables(a);
-    if found == false then break;
-    level = level + 1;
-    decide(f, a);
-  }
-
-  return true, a;
-
-  // helper functions.
-  init_vars :: (a: *[..]SAT, G: *ImplicationGraph, num_vars: int) {
-    array_reserve(a, num_vars);
-    array_reserve(G, num_vars+1);
-    for i: 0..num_vars-1 {
-      node: GraphNode;
-      node.clause=-1;
-      node.level=-1;
-      array_add(a, SAT.UNASSIGNED);
-      array_add(G, node);
-    }
-    node: GraphNode;
-    node.clause=-1;
-    node.level=-1;
-    array_add(G, node);
-  }
-
-  backtrack :: (f: [..]Clause, a: [..]SAT, b: int, graph: ImplicationGraph) {
-    for *node: graph {
-      if node.level > b {
-        val := it_index;
-        if val < a.count {
-          a[val] = SAT.UNASSIGNED;
-        }
-        node.clause = -1;
-        node.level  = -1;
-        array_reset(*node.edges);
-      }
-    }
-
-    // reset conflict node.
-    conflict := graph.count - 1;
-    node := *graph[conflict];
-    node.clause = -1;
-    node.level  = -1;
-    array_reset(*node.edges);
-  }
-
-  analyze_conflict :: (f: [..]Clause, a: [..]SAT, graph: ImplicationGraph, level: int)->(level: int) {
-    /*
-    d := level;
-    if d == 0 return -1, None;
-
-    conflict := graph.count-1; // conflict is always the last node.
-    c: Clause;
-    queue : [..]int;
-    head := 0;
-    array_add(*queue, conflict);
-
-    antecedent(conflict, *c);
-    while !one_lit_at_level(c, d) {
-      t    := last_assigned_lit_at_level(c, d);
-      v    := var_of_lit(t);
-      ante := antecedent(t);
-      //print("resing  c = %, a = %\n", c, ante);
-      resolve(ante, *c, t, v);
-      //print("resolve c = %, a = %\n", c, ante);
-    }
-    b := asserting_level(c);
-    */
-    return level - 1;
-
-    resolve :: (ante: Clause, clause: *Clause, t: int, v: SAT) {
-      if ante.count == 0 return; // antecendent is empty, do nothing.
-      t = t + 1;
-      for var : <<clause {
-        if var == t || -var == t {
-          remove var;
-        }
-      }
-      for a : ante {
-        if a == t || -a == t continue;
-        found, i := array_find(<<clause, a);
-        if found continue;
-        array_add(clause, a);
-      }
-    }
-
-    antecedent :: (t: int, c: *Clause) #expand {
-      node := *graph[t];  
-      clause_num := node.clause;
-      for var : f[clause_num] {
-        array_add(c, var);
-      }
-
-      head = head + 1;
-      for val: node.edges {
-        if graph[val].level == node.level {
-          array_add(*queue, val);
-        }
-      }
-    }
-
-    antecedent :: (t: int) -> Clause #expand {
-      node := *graph[t];
-      clause_num := node.clause;
-      if clause_num == -1 return None;
-      ret := f[clause_num];
-      return ret;
-    }
-
-    last_assigned_lit_at_level :: (c: Clause, d: int)->int #expand {
-      t := queue[head];
-      head = head + 1;
-      for val: graph[t].edges {
-        if graph[val].level == d {   //  WEIRD IDEAS> && !array_find(queue, val)
-          array_add(*queue, val);
-        }
-      }
-      return t;
-    }
-
-    var_of_lit :: (t: int)->SAT #expand {
-      return a[t];
-    }
-
-    one_lit_at_level :: (c: Clause, d: int)->bool #expand {
-      count := 0;
-
-      if c.count == 1 return true;
-
-      for var: c {
-        if var < 0 {
-          var = -var - 1;
-        } else {
-          var = var - 1;
-        }
-
-        if graph[var].level == d {
-          count = count + 1;
-          if count > 1 {
-            return false;
-          }
-        }
-      }
-
-      return true;
-    }
-
-    asserting_level :: (c: Clause)->int #expand {
-      if c.count == 1 return 0;
-
-
-      level := 0;
-      for var: c {
-        if var < 0 {
-          var = -var - 1;
-        } else {
-          var = var - 1;
-        }
-        var_level := graph[var].level;
-        if var_level == d continue;
-        level = max(var_level, d);
-      }
-      return level;
-    }
-  }
-
-  decide :: (f: [..]Clause, a: [..]SAT) #expand {
-    // TODO: currently, we just pick a random value.
-    rand := random_get();
-    if rand & 1 {
-      a[`index] = SAT.TRUE;
-      print("x%=T\n", `index);
-    } else {
-      a[`index] = SAT.FALSE;
-      print("x%=F\n", `index);
-    }
-    node := *graph[`index];
-    node.level = level;
-    node.clause = -1;
-  }
-
-  has_unassigned_variables :: (a: [..]SAT)->bool,int #expand {
-    found, index := array_find(a, SAT.UNASSIGNED);
-    return found, index;
-  }
-
-}
-
-None : Clause; // ...Don't know if there's a better way to do this.
-
-main :: () {
-  args := get_command_line_arguments();
-  if args.count == 1 {
-    print("Please supply a *.cnf sat file to the program.\n");
-    return;
-  }
-
-  // parse the sat file
-  for i: 1..args.count - 1 {
-    file_name := args[i];
-    print("-----------------------\n");
-    print("%\n", file_name);
-
-    num_vars, clauses := parse_sat_file(file_name);
-    // sat solver
-    sat, vars := conflict_driven_clause_learning(num_vars, clauses);
- 
-    if sat {
-      for var : vars {
-        if var == SAT.TRUE {
-          print(" x%,   ", it_index+1);
-        } else if var == SAT.FALSE {
-          print("-x%,   ", it_index+1);
-        }
-      }
-      print("sat\n");
-    } else {
-      print("unsat\n");
-    }
+  Unit_Status :: enum u8 {
+    UnitPropagate;
+    Conflict;
+    Nothing;
   }
 }
+
+Propagation_Status :: enum u8 {
+  Conflict;
+  NoConflict;
+}
+
+
+all_variables_assigned :: inline (using sat: Sat_Vars)->bool{
+  return num_assigned >= count;
+}
+
 
 

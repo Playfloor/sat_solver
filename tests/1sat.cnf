@@ -1,4 +1,4 @@
 c This is 1sat.cnf
 p cnf 2 2
 1 -2
-2 -1
+-1
