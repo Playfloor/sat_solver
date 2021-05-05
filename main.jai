@@ -1,6 +1,7 @@
 #import "Basic";
 #import "File";
 #import "String";
+#import "Random";
 
 main :: () {
   args := get_command_line_arguments();
@@ -11,7 +12,7 @@ main :: () {
 
   file_name := args[1];
   num_vars, clauses := parse_sat_file(file_name);
-  sat, sat_vars := search(num_vars, clauses);
+  sat, sat_vars := inline search(num_vars, clauses);
 
   if sat {
     for clause: clauses {
@@ -77,50 +78,56 @@ parse_sat_file :: (file_name: string)-> int, [..]Clause {
 search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
   // conflict driven clause learning
   sat_vars := create_sat_vars(num_vars);
-  stack: [..]Var;
+  assigns: [..]LogVar;
+  array_reserve(*assigns, sat_vars.count);
 
+  level := 0;
   while true {
-    status := boolean_constant_propagation(*sat_vars, formula);
+    status := boolean_constant_propagation(*sat_vars, formula, *assigns, level);
     if status == Propagation_Status.Conflict {
-      return false, sat_vars; // TODO
+      level = level - 1;
+      if level < 0 then
+        return false, sat_vars;
+
+      backtrack(*sat_vars, *assigns, level);
+      continue;
     }
 
     if all_variables_assigned(sat_vars) then
       break;
-    decide(*sat_vars, *stack);
+
+    level = level + 1;
+    decide(*sat_vars, *assigns, level);
   }
 
   return true, sat_vars;
 }
 
-init_decide := true; // TODO: temporary global
-
-decide :: (sat_vars: *Sat_Vars, stack: *[..]Var) #expand {
-  if init_decide {
-    for val, idx: sat_vars {
-      if val == BoolAssign.Unass {
-        array_add(stack, Var.NOT | cast(Var) idx);
-        array_add(stack, cast(Var) idx);
-        break;
-      }
+backtrack :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int) {
+  while assigns.count {
+    log_var := pop(assigns);
+    if log_var.level <= level {
+      array_add(assigns, log_var);
+      break;
     }
-    init_decide = false;
+    if log_var.clause_idx == -1 {
+      idx := log_var.var_num;
+      assign_value(sat_vars, idx, false);
+      print("Decide x%=false\n", idx);
+      array_add(assigns, create_log_var(idx, level, -1));
+    } else {
+      print("Backtracking level=%, x%=???\n", log_var.level, log_var.var_num);
+      unassign_value(sat_vars, log_var.var_num);
+    }
   }
-  
-  top := pop(stack);
-  val, not := get_var_num(top);
-  if not {
-    assign_value(sat_vars, val, false);
-    print("Decide x%=false\n", val);
-  } else {
-    assign_value(sat_vars, val, true);
-    print("Decide x%=true\n", val);
-  }
+}
 
+decide :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int) #expand {
   for val, idx: sat_vars {
     if val == BoolAssign.Unass {
-      array_add(stack, Var.NOT | cast(Var) idx);
-      array_add(stack, cast(Var) idx);
+      assign_value(sat_vars, idx, true);
+      print("Decide x%=true\n", idx);
+      array_add(assigns, create_log_var(idx, level, -1));
       break;
     }
   }
@@ -204,7 +211,7 @@ BoolAssign :: enum s8 {
 
 get_var_num :: inline (v: Var) -> s64, BoolAssign {
   val := cast(s64) (Var.SIGN_MASK & v);
-  not := cast(BoolAssign) (((Var.NOT & v) >> 31) & Var.ONE);
+  not := cast(BoolAssign) (Var.NOT & v) <<< 1;    //(((Var.NOT & v) >> 31) & Var.ONE);
   //print("get_var_num: %\n", formatInt(cast(s8)not, base=16));
   return val, not;
 }
@@ -230,7 +237,7 @@ print_clause :: (clause: Clause) {
   print(")\n");
 }
 
-boolean_constant_propagation :: (sat: *Sat_Vars, formula: [..]Clause)->Propagation_Status {
+boolean_constant_propagation :: (sat: *Sat_Vars, formula: [..]Clause, assigns: *[..]LogVar, level: int)->Propagation_Status {
   TF := true;
   while TF {
     TF = false;
@@ -244,6 +251,7 @@ boolean_constant_propagation :: (sat: *Sat_Vars, formula: [..]Clause)->Propagati
         return Propagation_Status.Conflict;
       case Unit_Status.UnitPropagate;
         assign_value(sat, idx, val);
+        array_add(assigns, create_log_var(idx, level, clause_num));
         print("assign x%=%\n", idx, val);
         TF = true;
       case;
@@ -298,6 +306,20 @@ Propagation_Status :: enum u8 {
 
 all_variables_assigned :: inline (using sat: Sat_Vars)->bool{
   return num_assigned >= count;
+}
+
+LogVar :: struct {
+  var_num := -1;
+  level := -1;
+  clause_idx := -1;
+}
+
+create_log_var :: (var_num: int, level: int, clause_idx: int) -> LogVar {
+  log: LogVar = ---;
+  log.var_num = var_num;
+  log.level = level;
+  log.clause_idx = clause_idx;
+  return log;
 }
 
 
