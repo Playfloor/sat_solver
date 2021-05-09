@@ -11,11 +11,10 @@ main :: () {
   }
 
   file_name := args[1];
-  num_vars, clauses := parse_sat_file(file_name);
-  sat, sat_vars := search(num_vars, clauses);
-
+  num_vars, formula := parse_sat_file(file_name);
+  sat, sat_vars := search(num_vars, formula);
   if sat {
-    for clause: clauses {
+    for clause: formula {
       print_clause(clause);
     }
     for s: sat_vars {
@@ -81,6 +80,9 @@ search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
   assigns: [..]LogVar;
   learnt_clauses: [..]Clause;
   array_reserve(*assigns, sat_vars.count);
+  array_reserve(*learnt_clauses, num_vars / 2);
+  lit_priorities, not_priorities := init_priorities_vsids(num_vars, formula);
+  heap := init_heap_vsids(num_vars, lit_priorities, not_priorities);
 
   level := 0;
   while true {
@@ -94,7 +96,7 @@ search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
 
       level = b;
       array_add(*learnt_clauses, c);
-      backtrack(*sat_vars, *assigns, level);
+      backtrack(*sat_vars, heap, *assigns, c, lit_priorities, not_priorities, level);
       continue;
     }
 
@@ -102,13 +104,28 @@ search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
       break;
 
     level = level + 1;
-    decide(*sat_vars, *assigns, level);
+    decide_vsids(*sat_vars, *assigns, level, heap, lit_priorities, not_priorities);
   }
 
   return true, sat_vars;
 }
 
-backtrack :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int) {
+backtrack :: (sat_vars: *Sat_Vars, heap: Heap, assigns: *[..]LogVar, clause: Clause, lit: [..]float, not: [..]float, level: int) {
+  count := lit.count-1;
+  for i: 0..count {
+    lit[i] *= 0.5;
+    not[i] *= 0.5;
+  }
+  for var: clause {
+    idx, not_flag := get_var_num(var);
+    if not {
+      not[idx] += 1.0;
+    } else {
+      lit[idx] += 1.0;
+    }
+  }
+  array_reset(*heap.arr);
+
   while assigns.count {
     log_var := pop(assigns);
     if log_var.level <= level {
@@ -118,9 +135,28 @@ backtrack :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int) {
     print("Backtracking level=%, x%=???\n", log_var.level, log_var.var_num);
     unassign_value(sat_vars, log_var.var_num);
   }
+
+  for var, i: sat_vars {
+    if var == BoolAssign.Unass {
+      enqueue(heap, i, lit, not);
+    }
+  }
 }
 
-decide :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int) #expand {
+decide_vsids :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int, heap: Heap, lit: [..]float, not: [..]float) #expand {
+  while true {
+    assert(count(heap)>0);
+    val := dequeue(heap, lit, not);
+    if value_at(<<sat_vars, val) == BoolAssign.Unass {
+      assign_value(sat_vars, val, lit[val]>not[val]);
+      print("Decide x%=% @ level=%\n", val, lit[val]>not[val], level);
+      array_add(assigns, create_log_var(val, level, -1));
+      break;
+    }
+  }
+}
+
+decide_rand :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int) #expand {
   while true {
     r := random_get() % sat_vars.count;
     bool_assign := value_at(<<sat_vars, r);
@@ -253,7 +289,7 @@ boolean_constant_propagation :: (sat: *Sat_Vars, formula: [..]Clause, learnt_cla
       case Unit_Status.UnitPropagate;
         assign_value(sat, idx, val);
         array_add(assigns, create_log_var(idx, level, clause_num));
-        print("assign x%=%\n", idx, val);
+        print("assign x%=% @ level=%\n", idx, val, level);
         TF = true;
       case;
         assert(false);
@@ -271,7 +307,7 @@ boolean_constant_propagation :: (sat: *Sat_Vars, formula: [..]Clause, learnt_cla
       case Unit_Status.UnitPropagate;
         assign_value(sat, idx, val);
         array_add(assigns, create_log_var(idx, level, clause_num));
-        print("assign x%=%\n", idx, val);
+        print("assign x%=% @ level=%\n", idx, val, level);
         TF = true;
       case;
         assert(false);
@@ -345,7 +381,7 @@ create_log_var :: inline (var_num: int, level: int, clause_idx: int) -> LogVar {
 // for now, use the last uip
 analyze_conflict_last_uip :: (sat_vars: Sat_Vars, assigns: [..]LogVar, level: int)-> int, Clause {
   c: Clause;
-  b:= 0;
+  b := -1;
   for l: assigns {
     if l.clause_idx != -1 continue;
     print("LogVar: var_num=%, level=%, clause_idx=%\n", l.var_num, l.level, l.clause_idx);
@@ -365,3 +401,109 @@ analyze_conflict_last_uip :: (sat_vars: Sat_Vars, assigns: [..]LogVar, level: in
   return b, c;
 }
 
+/*analyze_conflict_first_uip :: (sat_vars: Sat_Vars, assigns: [..]LogVar, level: int)-> int, Clause {
+
+
+
+
+}*/
+
+
+
+init_priorities_vsids :: (num_vars: int, formula: [..]Clause)-> [..]float #must, [..]float #must {
+  lit_priorities: [..]float;
+  not_priorities: [..]float;
+  array_reserve(*lit_priorities, num_vars);
+  array_reserve(*not_priorities, num_vars);
+  for i: 0..num_vars-1 {
+    array_add(*lit_priorities, 0.0);
+    array_add(*not_priorities, 0.0);
+  }
+
+  for clause: formula {
+    for var : clause {
+      val, not := get_var_num(var);
+      if not {
+        lit_priorities[val] += 1.0;
+      } else {
+        not_priorities[val] += 1.0;
+      }
+    }
+  }
+  return lit_priorities, not_priorities;
+}
+
+init_heap_vsids :: (num_vars: int, lit: [..]float, not: [..]float)->Heap {
+  heap: Heap;
+  array_reserve(*heap.arr, num_vars);
+  for i: 0..num_vars-1 {
+    enqueue(heap, i, lit, not);
+  }
+  return heap;
+}
+
+// max heap functions enqueue, dequeue
+enqueue :: (using h: Heap, index: int, lit: [..]float, not: [..]float) {
+  array_add(*arr, index);
+  c := arr.count - 1;
+  c_priority := max(lit[index], not[index]);
+  while c > 0 {
+    p := (c-1) / 2;
+    val := arr[p];
+    p_priority := max(lit[val], not[val]);
+    if p < 0 || p_priority > c_priority
+      break;
+    swap(arr, p, c);
+    c = p;
+  }
+}
+
+dequeue :: (using h: Heap, lit: [..]float, not: [..]float)-> int, float {
+  ret := arr[0];
+  ret_p := max(lit[ret], not[ret]);
+  i := arr.count - 1;
+  arr[0] = arr[i];
+
+  p := 0;
+  p_priority := max(lit[arr[p]], not[arr[p]]);
+  while p < i {
+    l := 2*p + 1;
+    r := 2*p + 2;
+    c := -1;
+    if l > i 
+      break;
+    c = l;
+    c_priority: float = ---;
+    if r < i { 
+      r_priority := max(lit[arr[r]], not[arr[r]]);
+      l_priority := max(lit[arr[l]], not[arr[l]]);
+      if r_priority > l_priority {
+        c = r;
+        c_priority = r_priority;
+      } else {
+        c_priority = l_priority;
+      }
+    }
+    if p_priority > c_priority
+      break;
+    swap(arr, p, c);
+    p = c;
+  }
+
+  pop(*arr);
+  return ret, ret_p;
+}
+
+count :: inline (using h: Heap)-> int {
+  return arr.count;
+}
+
+swap :: inline (arr: []int, p: int, c: int) #expand {
+  t := arr[p];
+  arr[p] = arr[c];
+  arr[c] = t;
+}
+
+Heap :: struct {
+  arr: [..] int;
+}
