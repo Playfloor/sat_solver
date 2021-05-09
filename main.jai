@@ -289,7 +289,7 @@ boolean_constant_propagation :: (sat: *Sat_Vars, formula: [..]Clause, learnt_cla
       case Unit_Status.UnitPropagate;
         assign_value(sat, idx, val);
         array_add(assigns, create_log_var(idx, level, clause_num));
-        print("assign x%=%\n", idx, val);
+        print("assign x%=% @ level=%\n", idx, val, level);
         TF = true;
       case;
         assert(false);
@@ -307,7 +307,7 @@ boolean_constant_propagation :: (sat: *Sat_Vars, formula: [..]Clause, learnt_cla
       case Unit_Status.UnitPropagate;
         assign_value(sat, idx, val);
         array_add(assigns, create_log_var(idx, level, clause_num));
-        print("assign x%=%\n", idx, val);
+        print("assign x%=% @ level=%\n", idx, val, level);
         TF = true;
       case;
         assert(false);
@@ -381,7 +381,7 @@ create_log_var :: inline (var_num: int, level: int, clause_idx: int) -> LogVar {
 // for now, use the last uip
 analyze_conflict_last_uip :: (sat_vars: Sat_Vars, assigns: [..]LogVar, level: int)-> int, Clause {
   c: Clause;
-  b:= 0;
+  b := -1;
   for l: assigns {
     if l.clause_idx != -1 continue;
     print("LogVar: var_num=%, level=%, clause_idx=%\n", l.var_num, l.level, l.clause_idx);
@@ -400,6 +400,15 @@ analyze_conflict_last_uip :: (sat_vars: Sat_Vars, assigns: [..]LogVar, level: in
 
   return b, c;
 }
+
+/*analyze_conflict_first_uip :: (sat_vars: Sat_Vars, assigns: [..]LogVar, level: int)-> int, Clause {
+
+
+
+
+}*/
+
+
 
 init_priorities_vsids :: (num_vars: int, formula: [..]Clause)-> [..]float #must, [..]float #must {
   lit_priorities: [..]float;
