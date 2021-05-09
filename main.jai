@@ -79,16 +79,21 @@ search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
   // conflict driven clause learning
   sat_vars := create_sat_vars(num_vars);
   assigns: [..]LogVar;
+  learnt_clauses: [..]Clause;
   array_reserve(*assigns, sat_vars.count);
 
   level := 0;
   while true {
-    status := boolean_constant_propagation(*sat_vars, formula, *assigns, level);
+    status := boolean_constant_propagation(*sat_vars, formula, learnt_clauses, *assigns, level);
     if status == Propagation_Status.Conflict {
-      level = level - 1;
+      b, c := analyze_conflict_last_uip(sat_vars, assigns, level);
+      print("b=%\n", b);
+      print_clause(c);
       if level < 0 then
         return false, sat_vars;
 
+      level = b;
+      array_add(*learnt_clauses, c);
       backtrack(*sat_vars, *assigns, level);
       continue;
     }
@@ -233,10 +238,28 @@ print_clause :: (clause: Clause) {
   print(")\n");
 }
 
-boolean_constant_propagation :: (sat: *Sat_Vars, formula: [..]Clause, assigns: *[..]LogVar, level: int)->Propagation_Status {
+boolean_constant_propagation :: (sat: *Sat_Vars, formula: [..]Clause, learnt_clauses: [..]Clause, assigns: *[..]LogVar, level: int)->Propagation_Status {
   TF := true;
   while TF {
     TF = false;
+    for clause, clause_num: learnt_clauses {
+      status, idx, val := unit_propagation(<<sat, clause);
+      if status == {
+      case Unit_Status.Nothing;
+        // do nothing
+      case Unit_Status.Conflict;
+        // TODO: handle conflict!
+        return Propagation_Status.Conflict;
+      case Unit_Status.UnitPropagate;
+        assign_value(sat, idx, val);
+        array_add(assigns, create_log_var(idx, level, clause_num));
+        print("assign x%=%\n", idx, val);
+        TF = true;
+      case;
+        assert(false);
+      }
+    }
+
     for clause, clause_num: formula {
       status, idx, val := unit_propagation(<<sat, clause);
       if status == {
@@ -299,7 +322,6 @@ Propagation_Status :: enum u8 {
   NoConflict;
 }
 
-
 all_variables_assigned :: inline (using sat: Sat_Vars)->bool{
   return num_assigned >= count;
 }
@@ -310,7 +332,7 @@ LogVar :: struct {
   clause_idx := -1;
 }
 
-create_log_var :: (var_num: int, level: int, clause_idx: int) -> LogVar {
+create_log_var :: inline (var_num: int, level: int, clause_idx: int) -> LogVar {
   log: LogVar = ---;
   log.var_num = var_num;
   log.level = level;
@@ -318,5 +340,28 @@ create_log_var :: (var_num: int, level: int, clause_idx: int) -> LogVar {
   return log;
 }
 
+// get the last unique implication point
+// TODO: we want to get the first unique implication point, not the last!!! But
+// for now, use the last uip
+analyze_conflict_last_uip :: (sat_vars: Sat_Vars, assigns: [..]LogVar, level: int)-> int, Clause {
+  c: Clause;
+  b:= 0;
+  for l: assigns {
+    if l.clause_idx != -1 continue;
+    print("LogVar: var_num=%, level=%, clause_idx=%\n", l.var_num, l.level, l.clause_idx);
+    index := l.var_num; 
+    val := value_at(sat_vars, index);
+    if val == BoolAssign.True {
+      array_add(*c, Var.NOT | cast(Var) index);
+    } else if val == BoolAssign.False {
+      array_add(*c, cast(Var) index);
+    } else {
+      assert(false, "Error. The value must either be True or False, NOT val %=%\n", index, val);
+    }
+    if l.level < level
+      b = max(b, l.level);
+  }
 
+  return b, c;
+}
 
