@@ -2,3 +2,4 @@ sat
 .build/*
 .*.swp
 minisat
+main
