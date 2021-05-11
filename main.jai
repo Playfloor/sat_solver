@@ -2,6 +2,7 @@
 #import "File";
 #import "String";
 #import "Random";
+#import "Time";
 
 main :: () {
   args := get_command_line_arguments();
@@ -12,7 +13,9 @@ main :: () {
 
   file_name := args[1];
   num_vars, formula := parse_sat_file(file_name);
+  t := get_time();
   sat, sat_vars := search(num_vars, formula);
+  t = get_time() - t;
   if sat {
     for clause: formula {
       print_clause(clause);
@@ -24,6 +27,8 @@ main :: () {
   } else {
     print("unsat\n");
   }
+  print("Search took: % seconds\n", t);
+  print("Number of conflicts: %\n", num_conflicts);
 }
 
 parse_sat_file :: (file_name: string)-> int, [..]Clause {
@@ -73,6 +78,9 @@ parse_sat_file :: (file_name: string)-> int, [..]Clause {
   return num_vars, clauses;
 }
 
+
+num_conflicts := 0;
+
 // following the minisat pseudo-code
 search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
   // conflict driven clause learning
@@ -88,10 +96,14 @@ search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
   while true {
     status := boolean_constant_propagation(*sat_vars, formula, learnt_clauses, *assigns, level);
     if status == Propagation_Status.Conflict {
-      b, c := analyze_conflict_last_uip(sat_vars, assigns, level);
-      print("b=%\n", b);
-      print_clause(c);
-      if level < 0 then
+
+      num_conflicts += 1;
+
+      //b, c := analyze_conflict_last_uip(sat_vars, *assigns, level);
+      b, c := analyze_conflict_first_uip(sat_vars, *assigns, formula, learnt_clauses, level);
+      //print("b=%, conflict clause:\n", b);
+      //print_clause(c);
+      if b < 0 then
         return false, sat_vars;
 
       level = b;
@@ -132,7 +144,7 @@ backtrack :: (sat_vars: *Sat_Vars, heap: Heap, assigns: *[..]LogVar, clause: Cla
       array_add(assigns, log_var);
       break;
     }
-    print("Backtracking level=%, x%=???\n", log_var.level, log_var.var_num);
+    //print("Backtracking level=%, x%=???\n", log_var.level, log_var.var_num);
     unassign_value(sat_vars, log_var.var_num);
   }
 
@@ -148,8 +160,9 @@ decide_vsids :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int, heap: He
     assert(count(heap)>0);
     val := dequeue(heap, lit, not);
     if value_at(<<sat_vars, val) == BoolAssign.Unass {
-      assign_value(sat_vars, val, lit[val]>not[val]);
-      print("Decide x%=% @ level=%\n", val, lit[val]>not[val], level);
+      bool_val := lit[val] > not[val];
+      assign_value(sat_vars, val, bool_val);
+      //print("Decide x%=% @ level=%\n", val, bool_val, level);
       array_add(assigns, create_log_var(val, level, -1));
       break;
     }
@@ -163,7 +176,7 @@ decide_rand :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int) #expand {
     if bool_assign == BoolAssign.Unass {
       b := cast(bool) (random_get() % 2);
       assign_value(sat_vars, r, b);
-      print("Decide x%=% @ level=%\n", r, b, level);
+      //print("Decide x%=% @ level=%\n", r, b, level);
       array_add(assigns, create_log_var(r, level, -1));
       break;
     }
@@ -285,11 +298,13 @@ boolean_constant_propagation :: (sat: *Sat_Vars, formula: [..]Clause, learnt_cla
         // do nothing
       case Unit_Status.Conflict;
         // TODO: handle conflict!
+        array_add(assigns, create_log_var(-1, level, clause_num, true));
+        //print("conflict @ level=%, clause=%\n", level, clause_num);
         return Propagation_Status.Conflict;
       case Unit_Status.UnitPropagate;
         assign_value(sat, idx, val);
-        array_add(assigns, create_log_var(idx, level, clause_num));
-        print("assign x%=% @ level=%\n", idx, val, level);
+        array_add(assigns, create_log_var(idx, level, clause_num, true));
+        //print("assign x%=% @ level=%, clause=%\n", idx, val, level, clause_num);
         TF = true;
       case;
         assert(false);
@@ -303,11 +318,13 @@ boolean_constant_propagation :: (sat: *Sat_Vars, formula: [..]Clause, learnt_cla
         // do nothing
       case Unit_Status.Conflict;
         // TODO: handle conflict!
+        array_add(assigns, create_log_var(-1, level, clause_num));
+        //print("conflict @ level=%, clause=%\n", level, clause_num);
         return Propagation_Status.Conflict;
       case Unit_Status.UnitPropagate;
         assign_value(sat, idx, val);
         array_add(assigns, create_log_var(idx, level, clause_num));
-        print("assign x%=% @ level=%\n", idx, val, level);
+        //print("assign x%=% @ level=%, clause=%\n", idx, val, level, clause_num);
         TF = true;
       case;
         assert(false);
@@ -366,25 +383,28 @@ LogVar :: struct {
   var_num := -1;
   level := -1;
   clause_idx := -1;
+  learnt := false;
 }
 
-create_log_var :: inline (var_num: int, level: int, clause_idx: int) -> LogVar {
+create_log_var :: inline (var_num: int, level: int, clause_idx: int, learnt:=false) -> LogVar {
   log: LogVar = ---;
   log.var_num = var_num;
   log.level = level;
   log.clause_idx = clause_idx;
+  log.learnt = learnt;
   return log;
 }
 
 // get the last unique implication point
 // TODO: we want to get the first unique implication point, not the last!!! But
 // for now, use the last uip
-analyze_conflict_last_uip :: (sat_vars: Sat_Vars, assigns: [..]LogVar, level: int)-> int, Clause {
+analyze_conflict_last_uip :: (sat_vars: Sat_Vars, assigns: *[..]LogVar, level: int)-> int, Clause {
+  pop(assigns);// TODO: This is messy. Probably don't wanna do this, but leave it like this for now!
   c: Clause;
   b := -1;
-  for l: assigns {
+  for l: <<assigns {
     if l.clause_idx != -1 continue;
-    print("LogVar: var_num=%, level=%, clause_idx=%\n", l.var_num, l.level, l.clause_idx);
+    //print("LogVar: var_num=%, level=%, clause_idx=%\n", l.var_num, l.level, l.clause_idx);
     index := l.var_num; 
     val := value_at(sat_vars, index);
     if val == BoolAssign.True {
@@ -401,13 +421,146 @@ analyze_conflict_last_uip :: (sat_vars: Sat_Vars, assigns: [..]LogVar, level: in
   return b, c;
 }
 
-/*analyze_conflict_first_uip :: (sat_vars: Sat_Vars, assigns: [..]LogVar, level: int)-> int, Clause {
+analyze_conflict_first_uip :: (sat_vars: Sat_Vars, assigns: *[..]LogVar, formula: [..]Clause, learnt: [..]Clause, level: int)-> int, Clause {
+  c: Clause;
+  if level == 0 return -1, c;
+  values_visited: [..]int;
+  queue: [..]LogVar;
+  head := 0;
+  array_reserve(*queue, assigns.count);
+  init_clause(*c, level);
+  while !one_lit_at_level(c, level) {
+    //print("ANALYZE_CONFLICT LOOP BEGIN %=> %, head=%\n",head, queue, head);
+    //print_clause(c);
+    assert(head < queue.count, "Error in first UIP.");
+    a, var_num := last_assigned_lit_at_level(level);
+    //print("ANTECEDENT: ");
+    //print_clause(a);
+    //print("VALUES: %\n", values_visited);
+    resolve(*c, a, values_visited);
+    //print_clause(c);
+    array_add(*values_visited, var_num);
+  }
+  b := asserting_level(c, level);
+  return b, c;
 
+  init_clause :: (c: *Clause, level: int) #expand {
+    con := pop(assigns);
+    clause_idx := con.clause_idx;
+    learnt_TF := con.learnt;
+    if learnt_TF {
+      array_copy(c, learnt[clause_idx]);
+    } else {
+      array_copy(c, formula[clause_idx]);
+    }
+    for var : <<c {
+      val, not := get_var_num(var);
+      for logvar : <<assigns {
+        if logvar.level == level && logvar.var_num == val {
+          array_add(*queue, logvar);
+          break;
+        }
+      }
+    }
+  }
 
+  one_lit_at_level :: (c: Clause, level: int)->bool #expand {
+    count := 0;
+    for var : c {
+      val, not := get_var_num(var);
+      for logvar : <<assigns {
+        if logvar.level != level continue;
+        if logvar.var_num == val {
+          count += 1;
+        }
+      }
+    }
+    return count <= 1;
+  }
 
+  last_assigned_lit_at_level :: (level: int)->Clause, int #expand {
+    logvar := queue[head];
+    head += 1;
+    assert(logvar.level == level);
+    clause_idx := logvar.clause_idx;
+    learnt_TF := logvar.learnt;
+    //print("var=%, clause=%, learn=%\n", logvar.var_num, clause_idx, learnt_TF);
+    ret: Clause;
+    if clause_idx == -1 {
+      /*if value_at(sat_vars, logvar.var_num) == BoolAssign.True {
+        array_add(*ret, cast(Var) logvar.var_num );
+      } else {
+        array_add(*ret, Var.NOT | cast(Var) logvar.var_num );
+      }*/
+      return ret, logvar.var_num; // return nothing. no clause to evaluate
+    }
+    if learnt_TF {
+      ret = learnt[clause_idx];
+    } else {
+      ret = formula[clause_idx];
+    }
 
-}*/
+    // get the neighbors
+    for var : ret {
+      val, not := get_var_num(var);
+      for logvar : <<assigns {
+        if logvar.level == level && logvar.var_num == val && check_queue(queue, logvar)==false {
+          array_add(*queue, logvar);
+          break;
+        }
+      }
+    }
 
+    return ret, logvar.var_num;
+  }
+
+  resolve :: (c: *Clause, a: Clause, array: [..]int) {
+    for var1 : a {
+      val1, not1 := get_var_num(var1);
+      if array_find(array, val1) continue;
+      is_unique := true;
+      for var2 : <<c {
+        val2, not2 := get_var_num(var2);
+        if val1 == val2 {
+          if not1 != not2 {
+            remove var2;
+          } 
+          is_unique = false;
+        }
+      }
+      if is_unique then
+        array_add(c, var1);
+    }
+  }
+
+  asserting_level :: (c: Clause, level: int)->int #expand {
+    if c.count == 1 return 0;
+
+    b := -1;
+    for v : c {
+      val, not := get_var_num(v);
+      for logvar : <<assigns {
+        if val == logvar.var_num && logvar.level != level {
+          b = max(b, logvar.level);
+          break;
+        }
+      }
+    }
+    return b;
+  }
+}
+
+check_queue :: (queue: [..]LogVar, l: LogVar)->bool {
+  for val : queue {
+    if val.var_num == l.var_num 
+    && val.level == l.level 
+    && val.clause_idx == l.clause_idx
+    && val.learnt == l.learnt {
+      return true;
+    }
+  }
+  return false;
+}
 
 
 init_priorities_vsids :: (num_vars: int, formula: [..]Clause)-> [..]float #must, [..]float #must {
