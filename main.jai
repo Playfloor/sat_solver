@@ -27,6 +27,8 @@ main :: () {
   } else {
     print("unsat\n");
   }
+  print("Number of variables: %\n", num_vars);
+  print("Number of clauses: %\n", formula.count);
   print("Search took: % seconds\n", t);
   print("Number of conflicts: %\n", num_conflicts);
 }
@@ -49,7 +51,8 @@ parse_sat_file :: (file_name: string)-> int, [..]Clause {
 
     else if equal(tokens[0], "p") {
       num_vars = string_to_int(tokens[2]);
-      num_clauses   = string_to_int(tokens[3]);
+      num_clauses = string_to_int(tokens[3]);
+      assert(num_vars != 0 && num_clauses != 0, "Parse Error. num_vars=%, num_clauses=%", num_vars, num_clauses);
       array_reserve(*clauses, num_clauses);
     } else {
       clause : Clause;
@@ -89,26 +92,21 @@ search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
   learnt_clauses: [..]Clause;
   array_reserve(*assigns, sat_vars.count);
   array_reserve(*learnt_clauses, num_vars / 2);
-  lit_priorities, not_priorities := init_priorities_vsids(num_vars, formula);
-  heap := init_heap_vsids(num_vars, lit_priorities, not_priorities);
+  lit_priorities, not_priorities, max_priorities := init_priorities_vsids(num_vars, formula);
+  queue := init_queue_vsids(num_vars, max_priorities);
+  q_head := 0;
 
   level := 0;
   while true {
     status := boolean_constant_propagation(*sat_vars, formula, learnt_clauses, *assigns, level);
     if status == Propagation_Status.Conflict {
-
       num_conflicts += 1;
-
-      //b, c := analyze_conflict_last_uip(sat_vars, *assigns, level);
       b, c := analyze_conflict_first_uip(sat_vars, *assigns, formula, learnt_clauses, level);
-      //print("b=%, conflict clause:\n", b);
-      //print_clause(c);
       if b < 0 then
         return false, sat_vars;
-
       level = b;
       array_add(*learnt_clauses, c);
-      backtrack(*sat_vars, heap, *assigns, c, lit_priorities, not_priorities, level);
+      backtrack(*sat_vars, *assigns, c, level);
       continue;
     }
 
@@ -116,27 +114,26 @@ search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
       break;
 
     level = level + 1;
-    decide_vsids(*sat_vars, *assigns, level, heap, lit_priorities, not_priorities);
+    decide_vsids(*sat_vars, *assigns, level, lit_priorities, not_priorities);
   }
 
   return true, sat_vars;
 }
 
-backtrack :: (sat_vars: *Sat_Vars, heap: Heap, assigns: *[..]LogVar, clause: Clause, lit: [..]float, not: [..]float, level: int) {
-  count := lit.count-1;
+backtrack :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, clause: Clause, level: int) #expand {
+  count := `lit_priorities.count-1;
   for i: 0..count {
-    lit[i] *= 0.5;
-    not[i] *= 0.5;
+    `lit_priorities[i] *= 0.5;
+    `not_priorities[i] *= 0.5;
   }
   for var: clause {
     idx, not_flag := get_var_num(var);
-    if not {
-      not[idx] += 1.0;
+    if `not_priorities {
+      `not_priorities[idx] += 1.0;
     } else {
-      lit[idx] += 1.0;
+      `lit_priorities[idx] += 1.0;
     }
   }
-  array_reset(*heap.arr);
 
   while assigns.count {
     log_var := pop(assigns);
@@ -147,18 +144,15 @@ backtrack :: (sat_vars: *Sat_Vars, heap: Heap, assigns: *[..]LogVar, clause: Cla
     //print("Backtracking level=%, x%=???\n", log_var.level, log_var.var_num);
     unassign_value(sat_vars, log_var.var_num);
   }
-
-  for var, i: sat_vars {
-    if var == BoolAssign.Unass {
-      enqueue(heap, i, lit, not);
-    }
-  }
+  `q_head = 0;
+  bubble_sort_priority(sat_vars.count, `queue, `max_priorities);
 }
 
-decide_vsids :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int, heap: Heap, lit: [..]float, not: [..]float) #expand {
+decide_vsids :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int, lit: [..]float, not: [..]float) #expand {
   while true {
-    assert(count(heap)>0);
-    val := dequeue(heap, lit, not);
+    assert(`q_head < `queue.count);
+    val := `queue[`q_head];
+    `q_head += 1;
     if value_at(<<sat_vars, val) == BoolAssign.Unass {
       bool_val := lit[val] > not[val];
       assign_value(sat_vars, val, bool_val);
@@ -562,101 +556,59 @@ check_queue :: (queue: [..]LogVar, l: LogVar)->bool {
   return false;
 }
 
-
-init_priorities_vsids :: (num_vars: int, formula: [..]Clause)-> [..]float #must, [..]float #must {
+init_priorities_vsids :: (num_vars: int, formula: [..]Clause)-> [..]float #must, [..]float #must, [..]float #must {
   lit_priorities: [..]float;
   not_priorities: [..]float;
+  max_priorities: [..]float;
   array_reserve(*lit_priorities, num_vars);
   array_reserve(*not_priorities, num_vars);
+  array_reserve(*max_priorities, num_vars);
   for i: 0..num_vars-1 {
     array_add(*lit_priorities, 0.0);
     array_add(*not_priorities, 0.0);
   }
-
   for clause: formula {
     for var : clause {
       val, not := get_var_num(var);
       if not {
-        lit_priorities[val] += 1.0;
-      } else {
         not_priorities[val] += 1.0;
-      }
-    }
-  }
-  return lit_priorities, not_priorities;
-}
-
-init_heap_vsids :: (num_vars: int, lit: [..]float, not: [..]float)->Heap {
-  heap: Heap;
-  array_reserve(*heap.arr, num_vars);
-  for i: 0..num_vars-1 {
-    enqueue(heap, i, lit, not);
-  }
-  return heap;
-}
-
-// max heap functions enqueue, dequeue
-enqueue :: (using h: Heap, index: int, lit: [..]float, not: [..]float) {
-  array_add(*arr, index);
-  c := arr.count - 1;
-  c_priority := max(lit[index], not[index]);
-  while c > 0 {
-    p := (c-1) / 2;
-    val := arr[p];
-    p_priority := max(lit[val], not[val]);
-    if p < 0 || p_priority > c_priority
-      break;
-    swap(arr, p, c);
-    c = p;
-  }
-}
-
-dequeue :: (using h: Heap, lit: [..]float, not: [..]float)-> int, float {
-  ret := arr[0];
-  ret_p := max(lit[ret], not[ret]);
-  i := arr.count - 1;
-  arr[0] = arr[i];
-
-  p := 0;
-  p_priority := max(lit[arr[p]], not[arr[p]]);
-  while p < i {
-    l := 2*p + 1;
-    r := 2*p + 2;
-    c := -1;
-    if l > i 
-      break;
-    c = l;
-    c_priority: float = ---;
-    if r < i { 
-      r_priority := max(lit[arr[r]], not[arr[r]]);
-      l_priority := max(lit[arr[l]], not[arr[l]]);
-      if r_priority > l_priority {
-        c = r;
-        c_priority = r_priority;
       } else {
-        c_priority = l_priority;
+        lit_priorities[val] += 1.0;
       }
     }
-    if p_priority > c_priority
-      break;
-    swap(arr, p, c);
-    p = c;
   }
 
-  pop(*arr);
-  return ret, ret_p;
+  for i: 0..num_vars-1 {
+    a := lit_priorities[i];
+    b := not_priorities[i];
+    array_add(*max_priorities, max(a, b));
+  }
+  return lit_priorities, not_priorities, max_priorities;
 }
 
-count :: inline (using h: Heap)-> int {
-  return arr.count;
+init_queue_vsids :: (num_vars: int, max_p: [..]float)->[..]int {
+  queue: [..] int;
+  array_reserve(*queue, num_vars);
+  for i: 0..num_vars-1
+    array_add(*queue, i); // add all number 0,1,2,3,...num_vars-1
+  bubble_sort_priority(num_vars, queue, max_p);
+  return queue;
 }
 
-swap :: inline (arr: []int, p: int, c: int) #expand {
-  t := arr[p];
-  arr[p] = arr[c];
-  arr[c] = t;
-}
-
-Heap :: struct {
-  arr: [..] int;
+bubble_sort_priority :: (num_vars: int, queue: [..] int, max_p: [..]float) {
+  // sort indices according to max priority
+  while true {
+    flag := false;
+    for i: num_vars-1..1 {
+      j := i-1;
+      if max_p[queue[j]] >= max_p[queue[i]] 
+        continue;
+      t := queue[j];
+      queue[j] = queue[i];
+      queue[i] = t;
+      flag = true;
+    }
+    if flag == false 
+      break;
+  }
 }

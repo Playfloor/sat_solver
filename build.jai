@@ -9,6 +9,8 @@ build_debug :: () {
   }
   target_options := get_build_options(w);
   target_options.output_executable_name = "sat";
+  target_options.optimization_level = .DEBUG;
+  target_options.backend = .X64;
   set_build_options(target_options, w);
 
   compiler_begin_intercept(w);
@@ -37,8 +39,12 @@ build_release :: () {
   target_options := get_build_options(w);
   target_options.output_executable_name = "sat";
   target_options.optimization_level = .RELEASE;
-  target_options.backend = .LLVM;
   target_options.array_bounds_check = .OFF;
+
+  // LLVM options.
+  target_options.backend = .LLVM;
+  target_options.llvm_options.code_gen_optimization_level = 2; // same as saying clang -O2
+
   set_build_options(target_options, w);
 
   compiler_begin_intercept(w);
