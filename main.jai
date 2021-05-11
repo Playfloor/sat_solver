@@ -90,8 +90,10 @@ search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
   learnt_clauses: [..]Clause;
   array_reserve(*assigns, sat_vars.count);
   array_reserve(*learnt_clauses, num_vars / 2);
-  lit_priorities, not_priorities := init_priorities_vsids(num_vars, formula);
-  heap := init_heap_vsids(num_vars, lit_priorities, not_priorities);
+  lit_priorities, not_priorities, max_priorities := init_priorities_vsids(num_vars, formula);
+  queue := init_queue_vsids(num_vars, max_priorities);
+  q_head := 0;
+  //heap := init_heap_vsids(num_vars, lit_priorities, not_priorities);
 
   level := 0;
   while true {
@@ -103,7 +105,7 @@ search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
         return false, sat_vars;
       level = b;
       array_add(*learnt_clauses, c);
-      backtrack(*sat_vars, heap, *assigns, c, lit_priorities, not_priorities, level);
+      backtrack(*sat_vars, *assigns, c, level);
       continue;
     }
 
@@ -111,27 +113,26 @@ search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
       break;
 
     level = level + 1;
-    decide_vsids(*sat_vars, *assigns, level, heap, lit_priorities, not_priorities);
+    decide_vsids(*sat_vars, *assigns, level, lit_priorities, not_priorities);
   }
 
   return true, sat_vars;
 }
 
-backtrack :: (sat_vars: *Sat_Vars, heap: Heap, assigns: *[..]LogVar, clause: Clause, lit: [..]float, not: [..]float, level: int) {
-  count := lit.count-1;
+backtrack :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, clause: Clause, level: int) #expand {
+  count := `lit_priorities.count-1;
   for i: 0..count {
-    lit[i] *= 0.5;
-    not[i] *= 0.5;
+    `lit_priorities[i] *= 0.5;
+    `not_priorities[i] *= 0.5;
   }
   for var: clause {
     idx, not_flag := get_var_num(var);
-    if not {
-      not[idx] += 1.0;
+    if `not_priorities {
+      `not_priorities[idx] += 1.0;
     } else {
-      lit[idx] += 1.0;
+      `lit_priorities[idx] += 1.0;
     }
   }
-  array_reset(*heap.arr);
 
   while assigns.count {
     log_var := pop(assigns);
@@ -142,18 +143,16 @@ backtrack :: (sat_vars: *Sat_Vars, heap: Heap, assigns: *[..]LogVar, clause: Cla
     //print("Backtracking level=%, x%=???\n", log_var.level, log_var.var_num);
     unassign_value(sat_vars, log_var.var_num);
   }
-
-  for var, i: sat_vars {
-    if var == BoolAssign.Unass {
-      enqueue(heap, i, lit, not);
-    }
-  }
+  `q_head = 0;
+  bubble_sort_priority(sat_vars.count, `queue, `max_priorities);
 }
 
-decide_vsids :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int, heap: Heap, lit: [..]float, not: [..]float) #expand {
+decide_vsids :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int, lit: [..]float, not: [..]float) #expand {
   while true {
-    assert(count(heap)>0);
-    val := dequeue(heap, lit, not);
+    assert(`q_head < `queue.count);
+    //val := dequeue(heap, lit, not);
+    val := `queue[`q_head];
+    `q_head += 1;
     if value_at(<<sat_vars, val) == BoolAssign.Unass {
       bool_val := lit[val] > not[val];
       assign_value(sat_vars, val, bool_val);
@@ -558,11 +557,13 @@ check_queue :: (queue: [..]LogVar, l: LogVar)->bool {
 }
 
 
-init_priorities_vsids :: (num_vars: int, formula: [..]Clause)-> [..]float #must, [..]float #must {
+init_priorities_vsids :: (num_vars: int, formula: [..]Clause)-> [..]float #must, [..]float #must, [..]float #must {
   lit_priorities: [..]float;
   not_priorities: [..]float;
+  max_priorities: [..]float;
   array_reserve(*lit_priorities, num_vars);
   array_reserve(*not_priorities, num_vars);
+  array_reserve(*max_priorities, num_vars);
   for i: 0..num_vars-1 {
     array_add(*lit_priorities, 0.0);
     array_add(*not_priorities, 0.0);
@@ -577,7 +578,13 @@ init_priorities_vsids :: (num_vars: int, formula: [..]Clause)-> [..]float #must,
       }
     }
   }
-  return lit_priorities, not_priorities;
+
+  for i: 0..num_vars-1 {
+    a := lit_priorities[i];
+    b := not_priorities[i];
+    array_add(*max_priorities, max(a, b));
+  }
+  return lit_priorities, not_priorities, max_priorities;
 }
 
 init_heap_vsids :: (num_vars: int, lit: [..]float, not: [..]float)->Heap {
@@ -588,6 +595,37 @@ init_heap_vsids :: (num_vars: int, lit: [..]float, not: [..]float)->Heap {
   }
   return heap;
 }
+
+init_queue_vsids :: (num_vars: int, max_p: [..]float)->[..]int {
+  queue: [..] int;
+  array_reserve(*queue, num_vars);
+  for i: 0..num_vars-1
+    array_add(*queue, i); // add all number 0,1,2,3,...num_vars-1
+  bubble_sort_priority(num_vars, queue, max_p);
+  return queue;
+}
+
+bubble_sort_priority :: (num_vars: int, queue: [..] int, max_p: [..]float) {
+  // sort indices according to max priority
+  while true {
+    flag := false;
+    for i: num_vars-1..1 {
+      j := i-1;
+      if max_p[queue[j]] >= max_p[queue[i]] 
+        continue;
+      t := queue[j];
+      queue[j] = queue[i];
+      queue[i] = t;
+      flag = true;
+    }
+    if flag == false 
+      break;
+  }
+}
+
+
+
+
 
 // max heap functions enqueue, dequeue
 enqueue :: (using h: Heap, index: int, lit: [..]float, not: [..]float) {
