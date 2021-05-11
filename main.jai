@@ -2,6 +2,7 @@
 #import "File";
 #import "String";
 #import "Random";
+#import "Time";
 
 main :: () {
   args := get_command_line_arguments();
@@ -12,7 +13,9 @@ main :: () {
 
   file_name := args[1];
   num_vars, formula := parse_sat_file(file_name);
+  t := get_time();
   sat, sat_vars := search(num_vars, formula);
+  t = get_time() - t;
   if sat {
     for clause: formula {
       print_clause(clause);
@@ -24,6 +27,8 @@ main :: () {
   } else {
     print("unsat\n");
   }
+  print("Search took: % seconds\n", t);
+  print("Number of conflicts: %\n", num_conflicts);
 }
 
 parse_sat_file :: (file_name: string)-> int, [..]Clause {
@@ -73,6 +78,9 @@ parse_sat_file :: (file_name: string)-> int, [..]Clause {
   return num_vars, clauses;
 }
 
+
+num_conflicts := 0;
+
 // following the minisat pseudo-code
 search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
   // conflict driven clause learning
@@ -88,10 +96,13 @@ search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
   while true {
     status := boolean_constant_propagation(*sat_vars, formula, learnt_clauses, *assigns, level);
     if status == Propagation_Status.Conflict {
+
+      num_conflicts += 1;
+
       //b, c := analyze_conflict_last_uip(sat_vars, *assigns, level);
       b, c := analyze_conflict_first_uip(sat_vars, *assigns, formula, learnt_clauses, level);
-      print("b=%, conflict clause:\n", b);
-      print_clause(c);
+      //print("b=%, conflict clause:\n", b);
+      //print_clause(c);
       if b < 0 then
         return false, sat_vars;
 
@@ -133,7 +144,7 @@ backtrack :: (sat_vars: *Sat_Vars, heap: Heap, assigns: *[..]LogVar, clause: Cla
       array_add(assigns, log_var);
       break;
     }
-    print("Backtracking level=%, x%=???\n", log_var.level, log_var.var_num);
+    //print("Backtracking level=%, x%=???\n", log_var.level, log_var.var_num);
     unassign_value(sat_vars, log_var.var_num);
   }
 
@@ -151,7 +162,7 @@ decide_vsids :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int, heap: He
     if value_at(<<sat_vars, val) == BoolAssign.Unass {
       bool_val := lit[val] > not[val];
       assign_value(sat_vars, val, bool_val);
-      print("Decide x%=% @ level=%\n", val, bool_val, level);
+      //print("Decide x%=% @ level=%\n", val, bool_val, level);
       array_add(assigns, create_log_var(val, level, -1));
       break;
     }
@@ -165,7 +176,7 @@ decide_rand :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int) #expand {
     if bool_assign == BoolAssign.Unass {
       b := cast(bool) (random_get() % 2);
       assign_value(sat_vars, r, b);
-      print("Decide x%=% @ level=%\n", r, b, level);
+      //print("Decide x%=% @ level=%\n", r, b, level);
       array_add(assigns, create_log_var(r, level, -1));
       break;
     }
@@ -288,12 +299,12 @@ boolean_constant_propagation :: (sat: *Sat_Vars, formula: [..]Clause, learnt_cla
       case Unit_Status.Conflict;
         // TODO: handle conflict!
         array_add(assigns, create_log_var(-1, level, clause_num, true));
-        print("conflict @ level=%, clause=%\n", level, clause_num);
+        //print("conflict @ level=%, clause=%\n", level, clause_num);
         return Propagation_Status.Conflict;
       case Unit_Status.UnitPropagate;
         assign_value(sat, idx, val);
         array_add(assigns, create_log_var(idx, level, clause_num, true));
-        print("assign x%=% @ level=%, clause=%\n", idx, val, level, clause_num);
+        //print("assign x%=% @ level=%, clause=%\n", idx, val, level, clause_num);
         TF = true;
       case;
         assert(false);
@@ -308,12 +319,12 @@ boolean_constant_propagation :: (sat: *Sat_Vars, formula: [..]Clause, learnt_cla
       case Unit_Status.Conflict;
         // TODO: handle conflict!
         array_add(assigns, create_log_var(-1, level, clause_num));
-        print("conflict @ level=%, clause=%\n", level, clause_num);
+        //print("conflict @ level=%, clause=%\n", level, clause_num);
         return Propagation_Status.Conflict;
       case Unit_Status.UnitPropagate;
         assign_value(sat, idx, val);
         array_add(assigns, create_log_var(idx, level, clause_num));
-        print("assign x%=% @ level=%, clause=%\n", idx, val, level, clause_num);
+        //print("assign x%=% @ level=%, clause=%\n", idx, val, level, clause_num);
         TF = true;
       case;
         assert(false);
@@ -393,7 +404,7 @@ analyze_conflict_last_uip :: (sat_vars: Sat_Vars, assigns: *[..]LogVar, level: i
   b := -1;
   for l: <<assigns {
     if l.clause_idx != -1 continue;
-    print("LogVar: var_num=%, level=%, clause_idx=%\n", l.var_num, l.level, l.clause_idx);
+    //print("LogVar: var_num=%, level=%, clause_idx=%\n", l.var_num, l.level, l.clause_idx);
     index := l.var_num; 
     val := value_at(sat_vars, index);
     if val == BoolAssign.True {
@@ -419,15 +430,15 @@ analyze_conflict_first_uip :: (sat_vars: Sat_Vars, assigns: *[..]LogVar, formula
   array_reserve(*queue, assigns.count);
   init_clause(*c, level);
   while !one_lit_at_level(c, level) {
-    print("ANALYZE_CONFLICT LOOP BEGIN %=> %, head=%\n",head, queue, head);
-    print_clause(c);
+    //print("ANALYZE_CONFLICT LOOP BEGIN %=> %, head=%\n",head, queue, head);
+    //print_clause(c);
     assert(head < queue.count, "Error in first UIP.");
     a, var_num := last_assigned_lit_at_level(level);
-    print("ANTECEDENT: ");
-    print_clause(a);
-    print("VALUES: %\n", values_visited);
+    //print("ANTECEDENT: ");
+    //print_clause(a);
+    //print("VALUES: %\n", values_visited);
     resolve(*c, a, values_visited);
-    print_clause(c);
+    //print_clause(c);
     array_add(*values_visited, var_num);
   }
   b := asserting_level(c, level);
@@ -473,7 +484,7 @@ analyze_conflict_first_uip :: (sat_vars: Sat_Vars, assigns: *[..]LogVar, formula
     assert(logvar.level == level);
     clause_idx := logvar.clause_idx;
     learnt_TF := logvar.learnt;
-    print("var=%, clause=%, learn=%\n", logvar.var_num, clause_idx, learnt_TF);
+    //print("var=%, clause=%, learn=%\n", logvar.var_num, clause_idx, learnt_TF);
     ret: Clause;
     if clause_idx == -1 {
       /*if value_at(sat_vars, logvar.var_num) == BoolAssign.True {
