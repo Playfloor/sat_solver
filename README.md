@@ -14,6 +14,9 @@ p cnf 5 3
 ```
 The `p cnf 5 3` indicates that there are 5 boolean values to solve and 3 clauses to solve for.
 
+# Benchmarks
+You can run the sat solver against sat problems encoded here: https://www.cs.ubc.ca/~hoos/SATLIB/benchm.html
+
 # Resources
 Boolean Satisfiability Solver https://en.wikipedia.org/wiki/Boolean_satisfiability_problem
 
