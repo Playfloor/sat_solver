@@ -166,20 +166,6 @@ decide_vsids :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int, lit: [..
   }
 }
 
-decide_rand :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int) #expand {
-  while true {
-    r := random_get() % sat_vars.count;
-    bool_assign := value_at(<<sat_vars, r);
-    if bool_assign == BoolAssign.Unass {
-      b := cast(bool) (random_get() % 2);
-      assign_value(sat_vars, r, b);
-      //print("Decide x%=% @ level=%\n", r, b, level);
-      array_add(assigns, create_log_var(r, level, -1));
-      break;
-    }
-  }
-}
-
 Sat_Vars :: struct {
   tf_flags  : [..] u64;
   assigned: [..] u64;
