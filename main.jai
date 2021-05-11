@@ -27,6 +27,8 @@ main :: () {
   } else {
     print("unsat\n");
   }
+  print("Number of variables: %\n", num_vars);
+  print("Number of clauses: %\n", formula.count);
   print("Search took: % seconds\n", t);
   print("Number of conflicts: %\n", num_conflicts);
 }
@@ -93,7 +95,6 @@ search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
   lit_priorities, not_priorities, max_priorities := init_priorities_vsids(num_vars, formula);
   queue := init_queue_vsids(num_vars, max_priorities);
   q_head := 0;
-  //heap := init_heap_vsids(num_vars, lit_priorities, not_priorities);
 
   level := 0;
   while true {
@@ -150,7 +151,6 @@ backtrack :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, clause: Clause, level: 
 decide_vsids :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int, lit: [..]float, not: [..]float) #expand {
   while true {
     assert(`q_head < `queue.count);
-    //val := dequeue(heap, lit, not);
     val := `queue[`q_head];
     `q_head += 1;
     if value_at(<<sat_vars, val) == BoolAssign.Unass {
@@ -556,7 +556,6 @@ check_queue :: (queue: [..]LogVar, l: LogVar)->bool {
   return false;
 }
 
-
 init_priorities_vsids :: (num_vars: int, formula: [..]Clause)-> [..]float #must, [..]float #must, [..]float #must {
   lit_priorities: [..]float;
   not_priorities: [..]float;
@@ -587,15 +586,6 @@ init_priorities_vsids :: (num_vars: int, formula: [..]Clause)-> [..]float #must,
   return lit_priorities, not_priorities, max_priorities;
 }
 
-init_heap_vsids :: (num_vars: int, lit: [..]float, not: [..]float)->Heap {
-  heap: Heap;
-  array_reserve(*heap.arr, num_vars);
-  for i: 0..num_vars-1 {
-    enqueue(heap, i, lit, not);
-  }
-  return heap;
-}
-
 init_queue_vsids :: (num_vars: int, max_p: [..]float)->[..]int {
   queue: [..] int;
   array_reserve(*queue, num_vars);
@@ -621,74 +611,4 @@ bubble_sort_priority :: (num_vars: int, queue: [..] int, max_p: [..]float) {
     if flag == false 
       break;
   }
-}
-
-
-
-
-
-// max heap functions enqueue, dequeue
-enqueue :: (using h: Heap, index: int, lit: [..]float, not: [..]float) {
-  array_add(*arr, index);
-  c := arr.count - 1;
-  c_priority := max(lit[index], not[index]);
-  while c > 0 {
-    p := (c-1) / 2;
-    val := arr[p];
-    p_priority := max(lit[val], not[val]);
-    if p < 0 || p_priority > c_priority
-      break;
-    swap(arr, p, c);
-    c = p;
-  }
-}
-
-dequeue :: (using h: Heap, lit: [..]float, not: [..]float)-> int, float {
-  ret := arr[0];
-  ret_p := max(lit[ret], not[ret]);
-  i := arr.count - 1;
-  arr[0] = arr[i];
-
-  p := 0;
-  p_priority := max(lit[arr[p]], not[arr[p]]);
-  while p < i {
-    l := 2*p + 1;
-    r := 2*p + 2;
-    c := -1;
-    if l > i 
-      break;
-    c = l;
-    c_priority: float = ---;
-    if r < i { 
-      r_priority := max(lit[arr[r]], not[arr[r]]);
-      l_priority := max(lit[arr[l]], not[arr[l]]);
-      if r_priority > l_priority {
-        c = r;
-        c_priority = r_priority;
-      } else {
-        c_priority = l_priority;
-      }
-    }
-    if p_priority > c_priority
-      break;
-    swap(arr, p, c);
-    p = c;
-  }
-
-  pop(*arr);
-  return ret, ret_p;
-}
-
-count :: inline (using h: Heap)-> int {
-  return arr.count;
-}
-
-swap :: inline (arr: []int, p: int, c: int) #expand {
-  t := arr[p];
-  arr[p] = arr[c];
-  arr[c] = t;
-}
-
-Heap :: struct {
-  arr: [..] int;
 }
