@@ -49,7 +49,8 @@ parse_sat_file :: (file_name: string)-> int, [..]Clause {
 
     else if equal(tokens[0], "p") {
       num_vars = string_to_int(tokens[2]);
-      num_clauses   = string_to_int(tokens[3]);
+      num_clauses = string_to_int(tokens[3]);
+      assert(num_vars != 0 && num_clauses != 0, "Parse Error. num_vars=%, num_clauses=%", num_vars, num_clauses);
       array_reserve(*clauses, num_clauses);
     } else {
       clause : Clause;
@@ -96,16 +97,10 @@ search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
   while true {
     status := boolean_constant_propagation(*sat_vars, formula, learnt_clauses, *assigns, level);
     if status == Propagation_Status.Conflict {
-
       num_conflicts += 1;
-
-      //b, c := analyze_conflict_last_uip(sat_vars, *assigns, level);
       b, c := analyze_conflict_first_uip(sat_vars, *assigns, formula, learnt_clauses, level);
-      //print("b=%, conflict clause:\n", b);
-      //print_clause(c);
       if b < 0 then
         return false, sat_vars;
-
       level = b;
       array_add(*learnt_clauses, c);
       backtrack(*sat_vars, heap, *assigns, c, lit_priorities, not_priorities, level);
@@ -572,14 +567,13 @@ init_priorities_vsids :: (num_vars: int, formula: [..]Clause)-> [..]float #must,
     array_add(*lit_priorities, 0.0);
     array_add(*not_priorities, 0.0);
   }
-
   for clause: formula {
     for var : clause {
       val, not := get_var_num(var);
       if not {
-        lit_priorities[val] += 1.0;
-      } else {
         not_priorities[val] += 1.0;
+      } else {
+        lit_priorities[val] += 1.0;
       }
     }
   }
