@@ -122,9 +122,11 @@ search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
 
 backtrack :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, clause: Clause, level: int) #expand {
   count := `lit_priorities.count-1;
-  for i: 0..count {
-    `lit_priorities[i] *= 0.5;
-    `not_priorities[i] *= 0.5;
+  if num_conflicts & 1 {
+    for i: 0..count {
+      `lit_priorities[i] *= 0.5;
+      `not_priorities[i] *= 0.5;
+    }
   }
   for var: clause {
     idx, not_flag := get_var_num(var);
@@ -133,6 +135,7 @@ backtrack :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, clause: Clause, level: 
     } else {
       `lit_priorities[idx] += 1.0;
     }
+    `max_priorities[idx] = max(`not_priorities[idx], `lit_priorities[idx]);
   }
 
   while assigns.count {
