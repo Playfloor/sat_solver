@@ -413,15 +413,9 @@ analyze_conflict_first_uip :: (sat_vars: Sat_Vars, assigns: *[..]LogVar, formula
   array_reserve(*queue, assigns.count);
   init_clause(*c, level);
   while !one_lit_at_level(c, level) {
-    //print("ANALYZE_CONFLICT LOOP BEGIN %=> %, head=%\n",head, queue, head);
-    //print_clause(c);
     assert(head < queue.count, "Error in first UIP.");
     a, var_num := last_assigned_lit_at_level(level);
-    //print("ANTECEDENT: ");
-    //print_clause(a);
-    //print("VALUES: %\n", values_visited);
     resolve(*c, a, values_visited);
-    //print_clause(c);
     array_add(*values_visited, var_num);
   }
   b := asserting_level(c, level);
