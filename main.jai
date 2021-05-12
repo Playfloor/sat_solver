@@ -31,6 +31,8 @@ main :: () {
   print("Number of clauses: %\n", formula.count);
   print("Search took: % seconds\n", t);
   print("Number of conflicts: %\n", num_conflicts);
+  if sat exit(0);
+  else exit(1);
 }
 
 parse_sat_file :: (file_name: string)-> int, [..]Clause {
@@ -582,7 +584,7 @@ bubble_sort_priority :: (num_vars: int, queue: [..] int, max_p: [..]float) {
   // sort indices according to max priority
   while true {
     flag := false;
-    for i: num_vars-1..1 {
+    for < i: num_vars-1..1 {
       j := i-1;
       if max_p[queue[j]] >= max_p[queue[i]] 
         continue;
@@ -595,3 +597,4 @@ bubble_sort_priority :: (num_vars: int, queue: [..] int, max_p: [..]float) {
       break;
   }
 }
+
