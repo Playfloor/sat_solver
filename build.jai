@@ -2,6 +2,37 @@
 #import "Compiler";
 #import "Process";
 
+#run {
+  option : enum {
+    debug;
+    release;
+    test;
+  } = .debug;
+
+  args := compiler_get_command_line_arguments();
+  for arg: args {
+    if arg == {
+    case "debug";
+      option = .debug;
+    case "release";
+      option = .release;
+    case "test";
+      option = .test;
+    case;
+      print("Invalid commandline argument: %\n", arg);
+    }
+  }
+
+  if option == {
+  case .debug;
+    build_debug();
+  case .release;
+    build_release();
+  case .test;
+    test_sat_solver();
+  }
+}
+
 build_debug :: () {
   w := compiler_create_workspace();
   if !w {
@@ -40,11 +71,7 @@ build_release :: () {
   target_options := get_build_options(w);
   target_options.output_executable_name = "sat";
   target_options.optimization_level = .RELEASE;
-  target_options.array_bounds_check = .OFF;
-
-  // LLVM options.
-  target_options.backend = .LLVM;
-  target_options.llvm_options.code_gen_optimization_level = 2; // same as saying clang -O2
+  set_optimization_level(*target_options, 2, 0);
 
   set_build_options(target_options, w);
 
@@ -114,9 +141,9 @@ test_sat_solver :: () {
 
   test :: (file_name: string, code: int) #expand {
     num_tests += 1;
-    //print("Running tests/%...\n", file_name);
-    //print("----------------------------------------------\n");
-    success, exit_code, output_string := os_run_command(tprint("%/%", #filepath, "sat"), tprint("tests/%", file_name));
+    print("Running tests/%...\n", file_name);
+    print("----------------------------------------------\n");
+    success, exit_code := os_run_command(tprint("%/%", #filepath, "sat"), tprint("tests/%", file_name));
     if exit_code == code {
       num_passed += 1;
       print("test % successful\n", file_name);
@@ -126,6 +153,4 @@ test_sat_solver :: () {
     }
   }
 }
-
-#run test_sat_solver();
 
