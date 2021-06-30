@@ -1,7 +1,7 @@
 # Boolean Satisfiability Solver
 This is a simple boolean satisfiability solver built in the Jai Programming Language that uses the DPLL algorithm to solve the boolean satisfiability problem. Specifically, this solver uses Conflict-Driven Clause Learning to speed up DPLL.
 
-# Implmentation
+# Implementation
 This program takes in a *.cnf file in the DIMACS format, and determines whether the boolean equation is satisfiable or not.
 
 DIMACS file formats have the following format:

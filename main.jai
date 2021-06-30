@@ -17,9 +17,6 @@ main :: () {
   sat, sat_vars := search(num_vars, formula);
   t = get_time() - t;
   if sat {
-    for clause: formula {
-      print_clause(clause);
-    }
     for s: sat_vars {
       print("x%=%, ", it_index, s);
     }
@@ -31,6 +28,8 @@ main :: () {
   print("Number of clauses: %\n", formula.count);
   print("Search took: % seconds\n", t);
   print("Number of conflicts: %\n", num_conflicts);
+  if sat exit(0);
+  else exit(1);
 }
 
 parse_sat_file :: (file_name: string)-> int, [..]Clause {
@@ -122,9 +121,11 @@ search :: (num_vars: int, formula: [..]Clause) -> bool, Sat_Vars {
 
 backtrack :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, clause: Clause, level: int) #expand {
   count := `lit_priorities.count-1;
-  for i: 0..count {
-    `lit_priorities[i] *= 0.5;
-    `not_priorities[i] *= 0.5;
+  if num_conflicts & 1 {
+    for i: 0..count {
+      `lit_priorities[i] *= 0.5;
+      `not_priorities[i] *= 0.5;
+    }
   }
   for var: clause {
     idx, not_flag := get_var_num(var);
@@ -133,6 +134,7 @@ backtrack :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, clause: Clause, level: 
     } else {
       `lit_priorities[idx] += 1.0;
     }
+    `max_priorities[idx] = max(`not_priorities[idx], `lit_priorities[idx]);
   }
 
   while assigns.count {
@@ -158,20 +160,6 @@ decide_vsids :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int, lit: [..
       assign_value(sat_vars, val, bool_val);
       //print("Decide x%=% @ level=%\n", val, bool_val, level);
       array_add(assigns, create_log_var(val, level, -1));
-      break;
-    }
-  }
-}
-
-decide_rand :: (sat_vars: *Sat_Vars, assigns: *[..]LogVar, level: int) #expand {
-  while true {
-    r := random_get() % sat_vars.count;
-    bool_assign := value_at(<<sat_vars, r);
-    if bool_assign == BoolAssign.Unass {
-      b := cast(bool) (random_get() % 2);
-      assign_value(sat_vars, r, b);
-      //print("Decide x%=% @ level=%\n", r, b, level);
-      array_add(assigns, create_log_var(r, level, -1));
       break;
     }
   }
@@ -280,6 +268,19 @@ print_clause :: (clause: Clause) {
   }
   print(")\n");
 }
+
+bcp_watch_literals :: (queue: *[..]Var, sat: *Sat_Vars, formula: [..]Clause, learnt_clauses: [..]Clause, assigns: *[..]LogVar, level: int, lit_watch: [..][..]int, not_watch: [..][..]int, l_lit_watch: [..][..]int, l_not_watch: [..][..]int)->Propagation_Status {
+
+  while queue.count > 0 {
+    v := pop(queue);
+    index, not := get_var_num(v);
+
+
+  }
+}
+
+
+
 
 boolean_constant_propagation :: (sat: *Sat_Vars, formula: [..]Clause, learnt_clauses: [..]Clause, assigns: *[..]LogVar, level: int)->Propagation_Status {
   TF := true;
@@ -424,15 +425,9 @@ analyze_conflict_first_uip :: (sat_vars: Sat_Vars, assigns: *[..]LogVar, formula
   array_reserve(*queue, assigns.count);
   init_clause(*c, level);
   while !one_lit_at_level(c, level) {
-    //print("ANALYZE_CONFLICT LOOP BEGIN %=> %, head=%\n",head, queue, head);
-    //print_clause(c);
     assert(head < queue.count, "Error in first UIP.");
     a, var_num := last_assigned_lit_at_level(level);
-    //print("ANTECEDENT: ");
-    //print_clause(a);
-    //print("VALUES: %\n", values_visited);
     resolve(*c, a, values_visited);
-    //print_clause(c);
     array_add(*values_visited, var_num);
   }
   b := asserting_level(c, level);
@@ -599,7 +594,7 @@ bubble_sort_priority :: (num_vars: int, queue: [..] int, max_p: [..]float) {
   // sort indices according to max priority
   while true {
     flag := false;
-    for i: num_vars-1..1 {
+    for < i: num_vars-1..1 {
       j := i-1;
       if max_p[queue[j]] >= max_p[queue[i]] 
         continue;
@@ -612,3 +607,4 @@ bubble_sort_priority :: (num_vars: int, queue: [..] int, max_p: [..]float) {
       break;
   }
 }
+
