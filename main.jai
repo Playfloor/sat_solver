@@ -269,7 +269,7 @@ print_clause :: (clause: Clause) {
   print(")\n");
 }
 
-bcp_watch_literals :: (queue: *[..]Var, sat: *Sat_Vars, formula: [..]Clause, learnt_clauses: [..]Clause, assigns: *[..]LogVar, level: int, lit_watch: [..][..]int, not_watch: [..][..]int, l_lit_watch: [..][..]int, l_not_watch: [..][..]int)->Propagation_Status {
+/*bcp_watch_literals :: (queue: *[..]Var, sat: *Sat_Vars, formula: [..]Clause, learnt_clauses: [..]Clause, assigns: *[..]LogVar, level: int, lit_watch: [..][..]int, not_watch: [..][..]int, l_lit_watch: [..][..]int, l_not_watch: [..][..]int)->Propagation_Status {
 
   while queue.count > 0 {
     v := pop(queue);
@@ -277,7 +277,7 @@ bcp_watch_literals :: (queue: *[..]Var, sat: *Sat_Vars, formula: [..]Clause, lea
 
 
   }
-}
+}*/
 
 
 
